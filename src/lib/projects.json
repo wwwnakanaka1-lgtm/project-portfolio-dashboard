@@ -1,0 +1,277 @@
+{
+  "projects": [
+    {
+      "id": "stock-trading-system",
+      "name": "Stock Trading System",
+      "category": "finance",
+      "description": "ML統合トレーディングプラットフォーム。ポートフォリオ分析、銘柄スクリーナー、パターン認識機能を搭載",
+      "path": "C:/Users/wwwhi/Create/stock-trading-system",
+      "technologies": ["Python", "Streamlit", "FastAPI", "scikit-learn", "PyTorch", "Plotly", "yfinance"],
+      "status": "active"
+    },
+    {
+      "id": "auto-trading-system",
+      "name": "Auto Trading System",
+      "category": "finance",
+      "description": "Wyckoffパターン検出による自動トレードシステム",
+      "path": "C:/Users/wwwhi/Create/auto-trading-system",
+      "technologies": ["Python", "pandas", "yfinance", "scipy"],
+      "status": "active"
+    },
+    {
+      "id": "jp-stock-theme-tracker",
+      "name": "JP Stock Theme Tracker",
+      "category": "finance",
+      "description": "日本株テーマ別追跡ツール。テーマごとのリターン分析",
+      "path": "C:/Users/wwwhi/Create/jp-stock-theme-tracker",
+      "technologies": ["Python", "Streamlit", "pandas", "yfinance"],
+      "status": "active"
+    },
+    {
+      "id": "jp-theme-tracker-next",
+      "name": "JP Theme Tracker Next",
+      "category": "finance",
+      "description": "日本株テーマ追跡ツールのNext.js版",
+      "path": "C:/Users/wwwhi/Create/jp-theme-tracker-next",
+      "technologies": ["Next.js", "TypeScript", "FastAPI", "Recharts"],
+      "status": "active"
+    },
+    {
+      "id": "investment-dashboard",
+      "name": "Investment Dashboard",
+      "category": "finance",
+      "description": "投資ポートフォリオ分析ダッシュボード",
+      "path": "C:/Users/wwwhi/Create/investment-dashboard",
+      "technologies": ["Python", "pandas", "matplotlib", "yfinance"],
+      "status": "active"
+    },
+    {
+      "id": "investment-strategy-pptx",
+      "name": "Investment Strategy PPTX",
+      "category": "finance",
+      "description": "投資戦略PowerPointレポート生成ツール",
+      "path": "C:/Users/wwwhi/Create/investment-strategy-pptx",
+      "technologies": ["Python", "python-pptx"],
+      "status": "active"
+    },
+    {
+      "id": "expectation-nikkei",
+      "name": "Expectation Nikkei",
+      "category": "finance",
+      "description": "日経225予測デスクトップアプリケーション",
+      "path": "C:/Users/wwwhi/Create/expectation-nikkei",
+      "technologies": ["Python", "PySide6", "scikit-learn"],
+      "status": "active"
+    },
+    {
+      "id": "salary-dashboard",
+      "name": "Salary Dashboard",
+      "category": "finance",
+      "description": "給与分析Webダッシュボード",
+      "path": "C:/Users/wwwhi/Create/salary-dashboard",
+      "technologies": ["Python", "Flask", "pandas", "scikit-learn"],
+      "status": "active"
+    },
+    {
+      "id": "salary_dashboard",
+      "name": "Salary Dashboard (Excel)",
+      "category": "archive",
+      "description": "給与データExcelファイル",
+      "path": "C:/Users/wwwhi/Create/salary_dashboard",
+      "technologies": ["Excel"],
+      "status": "archive"
+    },
+    {
+      "id": "nexus",
+      "name": "Nexus",
+      "category": "data-analysis",
+      "description": "高性能データ分析プラットフォーム。3500+カラム対応、リアルタイム進捗表示",
+      "path": "C:/Users/wwwhi/Create/nexus",
+      "technologies": ["Next.js", "TypeScript", "FastAPI", "Celery", "Redis", "PyArrow"],
+      "status": "active"
+    },
+    {
+      "id": "production_data_analyzer",
+      "name": "Production Data Analyzer (Desktop)",
+      "category": "data-analysis",
+      "description": "RF部品製造データ分析デスクトップアプリ",
+      "path": "C:/Users/wwwhi/Create/production_data_analyzer",
+      "technologies": ["Python", "tkinter", "pandas", "scipy"],
+      "status": "active"
+    },
+    {
+      "id": "production_data_analyzer_dash",
+      "name": "Production Data Analyzer (Dash)",
+      "category": "data-analysis",
+      "description": "製造データ分析Web版（Dash）",
+      "path": "C:/Users/wwwhi/Create/production_data_analyzer_dash",
+      "technologies": ["Python", "Dash", "pandas", "Plotly"],
+      "status": "active"
+    },
+    {
+      "id": "production-data-analyzer",
+      "name": "Production Data Analyzer (Gradio)",
+      "category": "data-analysis",
+      "description": "製造データ分析統合版（Gradio）",
+      "path": "C:/Users/wwwhi/Create/production-data-analyzer",
+      "technologies": ["Python", "Gradio", "pandas", "Plotly"],
+      "status": "active"
+    },
+    {
+      "id": "production-data-analyzer-nextjs",
+      "name": "Production Data Analyzer (Next.js)",
+      "category": "data-analysis",
+      "description": "製造データ分析最新版（Next.js + DuckDB）",
+      "path": "C:/Users/wwwhi/Create/production-data-analyzer-nextjs",
+      "technologies": ["Next.js", "TypeScript", "DuckDB", "ECharts"],
+      "status": "active"
+    },
+    {
+      "id": "auto-code-reviewer",
+      "name": "Auto Code Reviewer",
+      "category": "ai-llm",
+      "description": "AIによるコードレビュー自動化ツール",
+      "path": "C:/Users/wwwhi/Create/auto-code-reviewer",
+      "technologies": ["Python", "Groq"],
+      "status": "active"
+    },
+    {
+      "id": "claude-task-dashboard",
+      "name": "Claude Task Dashboard",
+      "category": "ai-llm",
+      "description": "Claude AIタスク管理ダッシュボード",
+      "path": "C:/Users/wwwhi/Create/claude-task-dashboard",
+      "technologies": ["Node.js", "JavaScript"],
+      "status": "active"
+    },
+    {
+      "id": "clawdbot-usage-logger",
+      "name": "Clawdbot Usage Logger",
+      "category": "ai-llm",
+      "description": "Clawdbot API使用量ログツール（OTLP）",
+      "path": "C:/Users/wwwhi/Create/clawdbot-usage-logger",
+      "technologies": ["Python", "OpenTelemetry"],
+      "status": "active"
+    },
+    {
+      "id": "local-llm-chat",
+      "name": "Local LLM Chat",
+      "category": "ai-llm",
+      "description": "ローカルLLMチャットインターフェース（Ollama使用）",
+      "path": "C:/Users/wwwhi/Create/local-llm-chat",
+      "technologies": ["Python", "Gradio", "Ollama"],
+      "status": "active"
+    },
+    {
+      "id": "md-to-pdf",
+      "name": "MD to PDF",
+      "category": "utility",
+      "description": "Markdown→PDF変換ツール",
+      "path": "C:/Users/wwwhi/Create/md-to-pdf",
+      "technologies": ["Python", "fpdf2", "customtkinter"],
+      "status": "active"
+    },
+    {
+      "id": "pptx-template-generator",
+      "name": "PPTX Template Generator",
+      "category": "utility",
+      "description": "PowerPointテンプレート生成ツール",
+      "path": "C:/Users/wwwhi/Create/pptx-template-generator",
+      "technologies": ["Python", "python-pptx"],
+      "status": "active"
+    },
+    {
+      "id": "quick-launcher",
+      "name": "Quick Launcher",
+      "category": "utility",
+      "description": "Windowsアプリケーションランチャー",
+      "path": "C:/Users/wwwhi/Create/quick-launcher",
+      "technologies": ["Python", "tkinter", "pywinauto"],
+      "status": "active"
+    },
+    {
+      "id": "mind-map-tool",
+      "name": "Mind Map Tool",
+      "category": "utility",
+      "description": "インタラクティブマインドマップ作成ツール",
+      "path": "C:/Users/wwwhi/Create/mind-map-tool",
+      "technologies": ["React", "TypeScript", "xyflow", "Zustand", "TailwindCSS"],
+      "status": "active"
+    },
+    {
+      "id": "fukunage-line-bot",
+      "name": "Fukunage LINE Bot",
+      "category": "web-bot",
+      "description": "LINEキャラクターボット",
+      "path": "C:/Users/wwwhi/Create/fukunage-line-bot",
+      "technologies": ["Python", "Flask"],
+      "status": "active"
+    },
+    {
+      "id": "parallel-test",
+      "name": "Parallel Test",
+      "category": "web-bot",
+      "description": "TODOアプリ（バックエンド）",
+      "path": "C:/Users/wwwhi/Create/parallel-test",
+      "technologies": ["Python", "FastAPI", "SQLite", "SQLAlchemy"],
+      "status": "active"
+    },
+    {
+      "id": "parallel-test-frontend",
+      "name": "Parallel Test Frontend",
+      "category": "web-bot",
+      "description": "TODOアプリ（フロントエンド予定）",
+      "path": "C:/Users/wwwhi/Create/parallel-test-frontend",
+      "technologies": [],
+      "status": "empty"
+    },
+    {
+      "id": "job_history",
+      "name": "Job History",
+      "category": "archive",
+      "description": "履歴書保管フォルダ",
+      "path": "C:/Users/wwwhi/Create/job_history",
+      "technologies": [],
+      "status": "archive"
+    }
+  ],
+  "categories": {
+    "finance": {
+      "name": "金融・トレーディング",
+      "color": "#10B981",
+      "icon": "TrendingUp"
+    },
+    "data-analysis": {
+      "name": "データ分析・製造",
+      "color": "#3B82F6",
+      "icon": "BarChart2"
+    },
+    "ai-llm": {
+      "name": "AI・LLM関連",
+      "color": "#8B5CF6",
+      "icon": "Bot"
+    },
+    "utility": {
+      "name": "ユーティリティ",
+      "color": "#F59E0B",
+      "icon": "Wrench"
+    },
+    "web-bot": {
+      "name": "Webアプリ・ボット",
+      "color": "#EC4899",
+      "icon": "Globe"
+    },
+    "archive": {
+      "name": "その他・アーカイブ",
+      "color": "#6B7280",
+      "icon": "Archive"
+    }
+  },
+  "technologies": {
+    "languages": ["Python", "TypeScript", "JavaScript"],
+    "frameworks": ["Next.js", "FastAPI", "Flask", "Streamlit", "Gradio", "Dash", "React"],
+    "visualization": ["Plotly", "Recharts", "ECharts", "matplotlib"],
+    "ml": ["scikit-learn", "PyTorch", "XGBoost"],
+    "data": ["pandas", "numpy", "DuckDB", "SQLite", "Redis"]
+  }
+}

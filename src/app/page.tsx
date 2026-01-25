@@ -1,65 +1,215 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { CategoryChart } from "@/components/CategoryChart";
+import { TechChart } from "@/components/TechChart";
+import { RelationshipGraph } from "@/components/RelationshipGraph";
+import { ProjectTable } from "@/components/ProjectTable";
+import { DetailPanel } from "@/components/DetailPanel";
+import projectData from "@/lib/projects.json";
+import { Project, ProjectData } from "@/lib/types";
+
+const data = projectData as ProjectData;
+
+type Tab = "overview" | "graph" | "table";
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedTech, setSelectedTech] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+
+  const handleCategoryClick = (category: string) => {
+    setSelectedCategory(category === selectedCategory ? null : category);
+    setSelectedTech(null);
+  };
+
+  const handleTechClick = (tech: string) => {
+    setSelectedTech(tech === selectedTech ? null : tech);
+    setSelectedCategory(null);
+  };
+
+  const handleProjectClick = (project: Project) => {
+    setSelectedProject(project);
+  };
+
+  const clearFilters = () => {
+    setSelectedCategory(null);
+    setSelectedTech(null);
+  };
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "overview", label: "概要" },
+    { id: "graph", label: "関係性グラフ" },
+    { id: "table", label: "一覧" },
+  ];
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+      {/* Header */}
+      <header className="bg-white dark:bg-gray-800 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Project Portfolio Dashboard
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
+            C:\Users\wwwhi\Create 内のプロジェクト一覧と関係性
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </header>
+
+      {/* Stats Bar */}
+      <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex flex-wrap gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-bold text-blue-600">
+                {data.projects.length}
+              </span>
+              <span className="text-gray-500">プロジェクト</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-bold text-green-600">
+                {data.projects.filter((p) => p.status === "active").length}
+              </span>
+              <span className="text-gray-500">アクティブ</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-bold text-purple-600">
+                {Object.keys(data.categories).length}
+              </span>
+              <span className="text-gray-500">カテゴリ</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-bold text-orange-600">
+                {new Set(data.projects.flatMap((p) => p.technologies)).size}
+              </span>
+              <span className="text-gray-500">技術</span>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4">
+          <nav className="flex gap-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
+                  activeTab === tab.id
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      {(selectedCategory || selectedTech) && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b dark:border-gray-700">
+          <div className="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2">
+            <span className="text-sm text-gray-600 dark:text-gray-300">
+              フィルター:
+            </span>
+            {selectedCategory && (
+              <span
+                className="px-2 py-1 rounded text-xs text-white flex items-center gap-1"
+                style={{
+                  backgroundColor: data.categories[selectedCategory]?.color,
+                }}
+              >
+                {data.categories[selectedCategory]?.name}
+                <button
+                  onClick={() => setSelectedCategory(null)}
+                  className="hover:bg-white/20 rounded-full p-0.5"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {selectedTech && (
+              <span className="px-2 py-1 rounded text-xs bg-blue-500 text-white flex items-center gap-1">
+                {selectedTech}
+                <button
+                  onClick={() => setSelectedTech(null)}
+                  className="hover:bg-white/20 rounded-full p-0.5"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            <button
+              onClick={clearFilters}
+              className="text-xs text-blue-600 hover:underline ml-2"
+            >
+              クリア
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {activeTab === "overview" && (
+          <div className="space-y-6">
+            <CategoryChart
+              projects={data.projects}
+              categories={data.categories}
+              onCategoryClick={handleCategoryClick}
+            />
+            <TechChart
+              projects={data.projects}
+              onTechClick={handleTechClick}
+            />
+            <ProjectTable
+              projects={data.projects}
+              categories={data.categories}
+              selectedCategory={selectedCategory}
+              selectedTech={selectedTech}
+              onProjectClick={handleProjectClick}
+            />
+          </div>
+        )}
+
+        {activeTab === "graph" && (
+          <RelationshipGraph
+            projects={data.projects}
+            categories={data.categories}
+            onProjectClick={handleProjectClick}
+          />
+        )}
+
+        {activeTab === "table" && (
+          <ProjectTable
+            projects={data.projects}
+            categories={data.categories}
+            selectedCategory={selectedCategory}
+            selectedTech={selectedTech}
+            onProjectClick={handleProjectClick}
+          />
+        )}
       </main>
+
+      {/* Detail Panel Modal */}
+      <DetailPanel
+        project={selectedProject}
+        categories={data.categories}
+        onClose={() => setSelectedProject(null)}
+      />
+
+      {/* Footer */}
+      <footer className="bg-white dark:bg-gray-800 border-t dark:border-gray-700 mt-8">
+        <div className="max-w-7xl mx-auto px-4 py-4 text-center text-sm text-gray-500">
+          Project Portfolio Dashboard | Generated: 2026-01-25
+        </div>
+      </footer>
     </div>
   );
 }
