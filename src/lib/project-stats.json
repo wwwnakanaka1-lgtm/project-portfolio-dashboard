@@ -1,0 +1,894 @@
+{
+  "projects": [
+    {
+      "projectName": "auto-code-reviewer",
+      "projectPath": "C:/Users/wwwhi/Create/auto-code-reviewer",
+      "languages": {
+        "YAML": {
+          "files": 1,
+          "lines": 37
+        },
+        "Python": {
+          "files": 2,
+          "lines": 198
+        }
+      },
+      "totalFiles": 3,
+      "totalLines": 235,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 1,
+        "total": 1
+      },
+      "collectedAt": "2026-01-27T15:36:03.170Z"
+    },
+    {
+      "projectName": "auto-trading-system",
+      "projectPath": "C:/Users/wwwhi/Create/auto-trading-system",
+      "languages": {
+        "Python": {
+          "files": 16,
+          "lines": 6357
+        }
+      },
+      "totalFiles": 16,
+      "totalLines": 6357,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 13,
+        "total": 13
+      },
+      "collectedAt": "2026-01-27T15:36:03.184Z"
+    },
+    {
+      "projectName": "claude-task-dashboard",
+      "projectPath": "C:/Users/wwwhi/Create/claude-task-dashboard",
+      "languages": {
+        "JavaScript": {
+          "files": 2,
+          "lines": 2678
+        },
+        "HTML": {
+          "files": 1,
+          "lines": 273
+        },
+        "Batch": {
+          "files": 2,
+          "lines": 11
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 1269
+        }
+      },
+      "totalFiles": 6,
+      "totalLines": 4231,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 0,
+        "total": 0
+      },
+      "collectedAt": "2026-01-27T15:36:03.221Z"
+    },
+    {
+      "projectName": "clawdbot-usage-logger",
+      "projectPath": "C:/Users/wwwhi/Create/clawdbot-usage-logger",
+      "languages": {
+        "Python": {
+          "files": 2,
+          "lines": 384
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 73
+        }
+      },
+      "totalFiles": 3,
+      "totalLines": 457,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 2,
+        "total": 2
+      },
+      "collectedAt": "2026-01-27T15:36:03.224Z"
+    },
+    {
+      "projectName": "expectation-nikkei",
+      "projectPath": "C:/Users/wwwhi/Create/expectation-nikkei",
+      "languages": {
+        "Python": {
+          "files": 17,
+          "lines": 1861
+        },
+        "HTML": {
+          "files": 1,
+          "lines": 515
+        }
+      },
+      "totalFiles": 18,
+      "totalLines": 2376,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 7,
+        "total": 7
+      },
+      "collectedAt": "2026-01-27T15:36:03.271Z"
+    },
+    {
+      "projectName": "fukunage-line-bot",
+      "projectPath": "C:/Users/wwwhi/Create/fukunage-line-bot",
+      "languages": {
+        "Python": {
+          "files": 2,
+          "lines": 1289
+        }
+      },
+      "totalFiles": 2,
+      "totalLines": 1289,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 4,
+        "total": 4
+      },
+      "collectedAt": "2026-01-27T15:36:03.308Z"
+    },
+    {
+      "projectName": "investment-dashboard",
+      "projectPath": "C:/Users/wwwhi/Create/investment-dashboard",
+      "languages": {
+        "Python": {
+          "files": 2,
+          "lines": 1431
+        }
+      },
+      "totalFiles": 2,
+      "totalLines": 1431,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 4,
+        "total": 4
+      },
+      "collectedAt": "2026-01-27T15:36:03.354Z"
+    },
+    {
+      "projectName": "investment-strategy-pptx",
+      "projectPath": "C:/Users/wwwhi/Create/investment-strategy-pptx",
+      "languages": {
+        "Python": {
+          "files": 1,
+          "lines": 2936
+        }
+      },
+      "totalFiles": 1,
+      "totalLines": 2936,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 3,
+        "total": 3
+      },
+      "collectedAt": "2026-01-27T15:36:03.399Z"
+    },
+    {
+      "projectName": "job_history",
+      "projectPath": "C:/Users/wwwhi/Create/job_history",
+      "languages": {},
+      "totalFiles": 0,
+      "totalLines": 0,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 0,
+        "total": 0
+      },
+      "collectedAt": "2026-01-27T15:36:03.400Z"
+    },
+    {
+      "projectName": "jp-stock-theme-tracker",
+      "projectPath": "C:/Users/wwwhi/Create/jp-stock-theme-tracker",
+      "languages": {
+        "Python": {
+          "files": 14,
+          "lines": 2788
+        }
+      },
+      "totalFiles": 14,
+      "totalLines": 2788,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 7,
+        "total": 7
+      },
+      "collectedAt": "2026-01-27T15:36:03.408Z"
+    },
+    {
+      "projectName": "jp-theme-tracker-next",
+      "projectPath": "C:/Users/wwwhi/Create/jp-theme-tracker-next",
+      "languages": {
+        "Python": {
+          "files": 11,
+          "lines": 2520
+        },
+        "JSON": {
+          "files": 1713,
+          "lines": 2033633
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 104
+        },
+        "TypeScript": {
+          "files": 21,
+          "lines": 4132
+        },
+        "JavaScript": {
+          "files": 3,
+          "lines": 34
+        },
+        "Batch": {
+          "files": 3,
+          "lines": 64
+        }
+      },
+      "totalFiles": 1752,
+      "totalLines": 2040487,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 0,
+        "total": 0
+      },
+      "collectedAt": "2026-01-27T15:36:04.503Z"
+    },
+    {
+      "projectName": "local-llm-chat",
+      "projectPath": "C:/Users/wwwhi/Create/local-llm-chat",
+      "languages": {
+        "Python": {
+          "files": 2,
+          "lines": 469
+        },
+        "JSON": {
+          "files": 1,
+          "lines": 1
+        }
+      },
+      "totalFiles": 3,
+      "totalLines": 470,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 6,
+        "total": 6
+      },
+      "collectedAt": "2026-01-27T15:36:04.935Z"
+    },
+    {
+      "projectName": "md-to-pdf",
+      "projectPath": "C:/Users/wwwhi/Create/md-to-pdf",
+      "languages": {
+        "Python": {
+          "files": 2,
+          "lines": 437
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 46
+        },
+        "CSS": {
+          "files": 3,
+          "lines": 476
+        }
+      },
+      "totalFiles": 6,
+      "totalLines": 959,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 3,
+        "total": 3
+      },
+      "collectedAt": "2026-01-27T15:36:04.941Z"
+    },
+    {
+      "projectName": "mind-map-tool",
+      "projectPath": "C:/Users/wwwhi/Create/mind-map-tool",
+      "languages": {
+        "JavaScript": {
+          "files": 3,
+          "lines": 67
+        },
+        "Markdown": {
+          "files": 2,
+          "lines": 420
+        },
+        "HTML": {
+          "files": 1,
+          "lines": 14
+        },
+        "JSON": {
+          "files": 7,
+          "lines": 4552
+        },
+        "TypeScript": {
+          "files": 53,
+          "lines": 12392
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 125
+        },
+        "Batch": {
+          "files": 2,
+          "lines": 80
+        }
+      },
+      "totalFiles": 69,
+      "totalLines": 17650,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 30,
+        "python": 0,
+        "total": 30
+      },
+      "collectedAt": "2026-01-27T15:36:04.974Z"
+    },
+    {
+      "projectName": "nexus",
+      "projectPath": "C:/Users/wwwhi/Create/nexus",
+      "languages": {
+        "Python": {
+          "files": 25,
+          "lines": 3664
+        },
+        "YAML": {
+          "files": 1,
+          "lines": 77
+        },
+        "JavaScript": {
+          "files": 3,
+          "lines": 48
+        },
+        "JSON": {
+          "files": 2,
+          "lines": 63
+        },
+        "TypeScript": {
+          "files": 17,
+          "lines": 3184
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 65
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 169
+        },
+        "Batch": {
+          "files": 1,
+          "lines": 49
+        }
+      },
+      "totalFiles": 51,
+      "totalLines": 7319,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 0,
+        "total": 0
+      },
+      "collectedAt": "2026-01-27T15:36:05.001Z"
+    },
+    {
+      "projectName": "parallel-test",
+      "projectPath": "C:/Users/wwwhi/Create/parallel-test",
+      "languages": {
+        "Python": {
+          "files": 9,
+          "lines": 594
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 130
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 115
+        },
+        "HTML": {
+          "files": 1,
+          "lines": 128
+        }
+      },
+      "totalFiles": 12,
+      "totalLines": 967,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 10,
+        "total": 10
+      },
+      "collectedAt": "2026-01-27T15:36:05.041Z"
+    },
+    {
+      "projectName": "parallel-test-frontend",
+      "projectPath": "C:/Users/wwwhi/Create/parallel-test-frontend",
+      "languages": {},
+      "totalFiles": 0,
+      "totalLines": 0,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 0,
+        "total": 0
+      },
+      "collectedAt": "2026-01-27T15:36:05.041Z"
+    },
+    {
+      "projectName": "pptx-template-generator",
+      "projectPath": "C:/Users/wwwhi/Create/pptx-template-generator",
+      "languages": {
+        "Python": {
+          "files": 1,
+          "lines": 605
+        }
+      },
+      "totalFiles": 1,
+      "totalLines": 605,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 1,
+        "total": 1
+      },
+      "collectedAt": "2026-01-27T15:36:05.042Z"
+    },
+    {
+      "projectName": "production-data-analyzer",
+      "projectPath": "C:/Users/wwwhi/Create/production-data-analyzer",
+      "languages": {
+        "Python": {
+          "files": 36,
+          "lines": 16092
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 274
+        }
+      },
+      "totalFiles": 37,
+      "totalLines": 16366,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 17,
+        "total": 17
+      },
+      "collectedAt": "2026-01-27T15:36:05.141Z"
+    },
+    {
+      "projectName": "production-data-analyzer-nextjs",
+      "projectPath": "C:/Users/wwwhi/Create/production-data-analyzer-nextjs",
+      "languages": {
+        "JavaScript": {
+          "files": 2,
+          "lines": 27
+        },
+        "TypeScript": {
+          "files": 73,
+          "lines": 8233
+        },
+        "JSON": {
+          "files": 2,
+          "lines": 79
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 37
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 27
+        },
+        "Batch": {
+          "files": 1,
+          "lines": 5
+        }
+      },
+      "totalFiles": 80,
+      "totalLines": 8408,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 28,
+        "python": 0,
+        "total": 28
+      },
+      "collectedAt": "2026-01-27T15:36:05.221Z"
+    },
+    {
+      "projectName": "production_data_analyzer",
+      "projectPath": "C:/Users/wwwhi/Create/production_data_analyzer",
+      "languages": {
+        "Python": {
+          "files": 27,
+          "lines": 9011
+        },
+        "YAML": {
+          "files": 1,
+          "lines": 138
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 250
+        }
+      },
+      "totalFiles": 29,
+      "totalLines": 9399,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 16,
+        "total": 16
+      },
+      "collectedAt": "2026-01-27T15:36:05.239Z"
+    },
+    {
+      "projectName": "production_data_analyzer_dash",
+      "projectPath": "C:/Users/wwwhi/Create/production_data_analyzer_dash",
+      "languages": {
+        "Python": {
+          "files": 27,
+          "lines": 8801
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 159
+        },
+        "YAML": {
+          "files": 1,
+          "lines": 138
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 65
+        }
+      },
+      "totalFiles": 30,
+      "totalLines": 9163,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 11,
+        "total": 11
+      },
+      "collectedAt": "2026-01-27T15:36:05.256Z"
+    },
+    {
+      "projectName": "project-portfolio-dashboard",
+      "projectPath": "C:/Users/wwwhi/Create/project-portfolio-dashboard",
+      "languages": {
+        "JavaScript": {
+          "files": 2,
+          "lines": 27
+        },
+        "TypeScript": {
+          "files": 16,
+          "lines": 2314
+        },
+        "JSON": {
+          "files": 3,
+          "lines": 352
+        },
+        "Markdown": {
+          "files": 1,
+          "lines": 37
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 27
+        }
+      },
+      "totalFiles": 23,
+      "totalLines": 2757,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 15,
+        "python": 0,
+        "total": 15
+      },
+      "collectedAt": "2026-01-27T15:36:05.292Z"
+    },
+    {
+      "projectName": "quick-launcher",
+      "projectPath": "C:/Users/wwwhi/Create/quick-launcher",
+      "languages": {
+        "JSON": {
+          "files": 1,
+          "lines": 69
+        },
+        "Python": {
+          "files": 1,
+          "lines": 1464
+        }
+      },
+      "totalFiles": 2,
+      "totalLines": 1533,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 4,
+        "total": 4
+      },
+      "collectedAt": "2026-01-27T15:36:05.294Z"
+    },
+    {
+      "projectName": "salary-dashboard",
+      "projectPath": "C:/Users/wwwhi/Create/salary-dashboard",
+      "languages": {
+        "Python": {
+          "files": 1,
+          "lines": 278
+        },
+        "YAML": {
+          "files": 1,
+          "lines": 10
+        },
+        "CSS": {
+          "files": 1,
+          "lines": 444
+        },
+        "JavaScript": {
+          "files": 1,
+          "lines": 535
+        },
+        "HTML": {
+          "files": 2,
+          "lines": 171
+        }
+      },
+      "totalFiles": 6,
+      "totalLines": 1438,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 6,
+        "total": 6
+      },
+      "collectedAt": "2026-01-27T15:36:05.356Z"
+    },
+    {
+      "projectName": "salary_dashboard",
+      "projectPath": "C:/Users/wwwhi/Create/salary_dashboard",
+      "languages": {},
+      "totalFiles": 0,
+      "totalLines": 0,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": false
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 0,
+        "total": 0
+      },
+      "collectedAt": "2026-01-27T15:36:05.356Z"
+    },
+    {
+      "projectName": "stock-trading-system",
+      "projectPath": "C:/Users/wwwhi/Create/stock-trading-system",
+      "languages": {
+        "YAML": {
+          "files": 3,
+          "lines": 242
+        },
+        "Python": {
+          "files": 146,
+          "lines": 82267
+        },
+        "JSON": {
+          "files": 35,
+          "lines": 4507
+        },
+        "HTML": {
+          "files": 2,
+          "lines": 1476
+        },
+        "Markdown": {
+          "files": 2,
+          "lines": 560
+        },
+        "Batch": {
+          "files": 3,
+          "lines": 116
+        },
+        "PowerShell": {
+          "files": 2,
+          "lines": 45
+        },
+        "JavaScript": {
+          "files": 6,
+          "lines": 79
+        },
+        "CSS": {
+          "files": 2,
+          "lines": 125
+        },
+        "TypeScript": {
+          "files": 15,
+          "lines": 1927
+        }
+      },
+      "totalFiles": 216,
+      "totalLines": 91344,
+      "git": {
+        "lastCommitDate": null,
+        "commitCount": 0,
+        "hasGit": true
+      },
+      "dependencies": {
+        "npm": 0,
+        "python": 35,
+        "total": 35
+      },
+      "collectedAt": "2026-01-27T15:36:05.456Z"
+    }
+  ],
+  "summary": {
+    "totalProjects": 27,
+    "totalFiles": 2382,
+    "totalLines": 2230965,
+    "languageSummary": {
+      "YAML": {
+        "files": 8,
+        "lines": 642
+      },
+      "Python": {
+        "files": 344,
+        "lines": 143446
+      },
+      "JavaScript": {
+        "files": 22,
+        "lines": 3495
+      },
+      "HTML": {
+        "files": 8,
+        "lines": 2577
+      },
+      "Batch": {
+        "files": 12,
+        "lines": 325
+      },
+      "CSS": {
+        "files": 14,
+        "lines": 2936
+      },
+      "Markdown": {
+        "files": 13,
+        "lines": 2061
+      },
+      "JSON": {
+        "files": 1764,
+        "lines": 2043256
+      },
+      "TypeScript": {
+        "files": 195,
+        "lines": 32182
+      },
+      "PowerShell": {
+        "files": 2,
+        "lines": 45
+      }
+    }
+  },
+  "collectedAt": "2026-01-27T15:36:05.456Z"
+}
