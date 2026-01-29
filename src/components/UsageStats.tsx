@@ -19,6 +19,9 @@ import {
   UsageSummary,
 } from "@/lib/usage-types";
 
+// USD to JPY exchange rate (approximate)
+const USD_TO_JPY = 155;
+
 // Embedded stats data - in production, this would be loaded dynamically
 const USAGE_STATS: ClaudeUsageStats = {
   version: 1,
@@ -114,7 +117,9 @@ export function UsageStats() {
     };
   }, []);
 
-  const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
+  const formatUSD = (value: number) => `$${value.toFixed(2)}`;
+  const formatJPY = (value: number) => `¥${Math.round(value * USD_TO_JPY).toLocaleString()}`;
+  const formatBoth = (value: number) => `$${value.toFixed(2)} (¥${Math.round(value * USD_TO_JPY).toLocaleString()})`;
   const formatTokens = (value: number) => {
     if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
     if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -137,8 +142,9 @@ export function UsageStats() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-4 text-white">
-          <div className="text-2xl font-bold">{formatCurrency(summary.totalCost)}</div>
-          <div className="text-sm opacity-90">推定総コスト</div>
+          <div className="text-2xl font-bold">{formatUSD(summary.totalCost)}</div>
+          <div className="text-lg font-semibold opacity-90">{formatJPY(summary.totalCost)}</div>
+          <div className="text-sm opacity-75">推定総コスト</div>
         </div>
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-4 text-white">
           <div className="text-2xl font-bold">{formatTokens(summary.totalTokens)}</div>
@@ -167,7 +173,10 @@ export function UsageStats() {
               <div key={cost.model} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className="font-medium text-gray-900 dark:text-white">{modelName}</span>
-                  <span className="text-lg font-bold text-green-600">{formatCurrency(cost.totalCost)}</span>
+                  <div className="text-right">
+                    <span className="text-lg font-bold text-green-600">{formatUSD(cost.totalCost)}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">({formatJPY(cost.totalCost)})</span>
+                  </div>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-2">
                   <div
@@ -178,19 +187,23 @@ export function UsageStats() {
                 <div className="grid grid-cols-4 gap-2 text-xs text-gray-600 dark:text-gray-400">
                   <div>
                     <div className="font-medium">入力</div>
-                    <div>{formatCurrency(cost.inputCost)}</div>
+                    <div>{formatUSD(cost.inputCost)}</div>
+                    <div className="text-gray-400">{formatJPY(cost.inputCost)}</div>
                   </div>
                   <div>
                     <div className="font-medium">出力</div>
-                    <div>{formatCurrency(cost.outputCost)}</div>
+                    <div>{formatUSD(cost.outputCost)}</div>
+                    <div className="text-gray-400">{formatJPY(cost.outputCost)}</div>
                   </div>
                   <div>
                     <div className="font-medium">キャッシュ読取</div>
-                    <div>{formatCurrency(cost.cacheReadCost)}</div>
+                    <div>{formatUSD(cost.cacheReadCost)}</div>
+                    <div className="text-gray-400">{formatJPY(cost.cacheReadCost)}</div>
                   </div>
                   <div>
                     <div className="font-medium">キャッシュ作成</div>
-                    <div>{formatCurrency(cost.cacheCreationCost)}</div>
+                    <div>{formatUSD(cost.cacheCreationCost)}</div>
+                    <div className="text-gray-400">{formatJPY(cost.cacheCreationCost)}</div>
                   </div>
                 </div>
               </div>
@@ -225,7 +238,7 @@ export function UsageStats() {
 
       {/* Footer */}
       <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-        データソース: ~/.claude/stats-cache.json | 最終更新: {USAGE_STATS.lastComputedDate}
+        データソース: ~/.claude/stats-cache.json | 最終更新: {USAGE_STATS.lastComputedDate} | 為替レート: $1 = ¥{USD_TO_JPY}
       </div>
     </div>
   );

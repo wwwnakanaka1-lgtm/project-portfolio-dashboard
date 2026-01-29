@@ -1,5 +1,8 @@
 import { Project, Categories } from "./types";
 
+// USD to JPY exchange rate
+const USD_TO_JPY = 155;
+
 export function exportToHTML(projects: Project[], categories: Categories): void {
   const now = new Date();
   const dateStr = now.toLocaleDateString("ja-JP", {
@@ -49,12 +52,13 @@ export function exportToHTML(projects: Project[], categories: Categories): void 
   // Usage stats (embedded)
   const usageStats = {
     totalCost: 2283.45,
+    totalCostJPY: Math.round(2283.45 * USD_TO_JPY),
     totalTokens: 864_000_000,
     totalSessions: 34,
     totalMessages: 20469,
     models: [
-      { name: "Opus 4.5", cost: 2180.32, percentage: 95.5 },
-      { name: "Sonnet 4.5", cost: 103.13, percentage: 4.5 },
+      { name: "Opus 4.5", cost: 2180.32, costJPY: Math.round(2180.32 * USD_TO_JPY), percentage: 95.5 },
+      { name: "Sonnet 4.5", cost: 103.13, costJPY: Math.round(103.13 * USD_TO_JPY), percentage: 4.5 },
     ],
   };
 
@@ -388,6 +392,7 @@ export function exportToHTML(projects: Project[], categories: Categories): void 
     <div class="three-column">
       <div class="cost-card">
         <div class="amount">$${usageStats.totalCost.toLocaleString()}</div>
+        <div style="font-size: 1.5rem; opacity: 0.9;">¥${usageStats.totalCostJPY.toLocaleString()}</div>
         <div class="label">推定総コスト</div>
       </div>
       <div class="cost-card" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
@@ -409,10 +414,14 @@ export function exportToHTML(projects: Project[], categories: Categories): void 
               <div class="model-name">${model.name}</div>
               <div style="font-size: 0.85rem; color: #666;">${model.percentage}% of total</div>
             </div>
-            <div class="model-cost">$${model.cost.toLocaleString()}</div>
+            <div style="text-align: right;">
+              <div class="model-cost">$${model.cost.toLocaleString()}</div>
+              <div style="font-size: 0.9rem; color: #666;">¥${model.costJPY.toLocaleString()}</div>
+            </div>
           </div>
         `).join('')}
       </div>
+      <div style="margin-top: 15px; font-size: 0.8rem; color: #888; text-align: right;">為替レート: $1 = ¥${USD_TO_JPY}</div>
     </div>
   </div>
 
