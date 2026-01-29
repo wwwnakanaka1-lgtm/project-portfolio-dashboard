@@ -1,6 +1,7 @@
 "use client";
 
 import { Project, Categories } from "@/lib/types";
+import { GitHubStats } from "./GitHubStats";
 
 interface DetailPanelProps {
   project: Project | null;
@@ -109,6 +110,18 @@ export function DetailPanel({ project, categories, onClose }: DetailPanelProps) 
               {project.path}
             </code>
           </div>
+
+          {/* GitHub Stats */}
+          {project.githubRepo && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">
+                GitHub統計
+              </h3>
+              <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <GitHubStats repo={project.githubRepo} />
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3 pt-4 border-t dark:border-gray-700">

@@ -32,6 +32,8 @@ export interface Project {
   activity?: ProjectActivity;
   cost?: ProjectCost;
   launchCommand?: string;
+  // GitHub連携
+  githubRepo?: string; // 例: "owner/repo-name"
 }
 
 export interface Category {
@@ -54,4 +56,32 @@ export interface ProjectData {
     ml: string[];
     data: string[];
   };
+}
+
+// GitHub API関連の型定義
+export interface GitHubStats {
+  stars: number;
+  forks: number;
+  openIssues: number;
+  openPRs: number;
+  lastCommitDate: string | null;
+  lastCommitMessage: string | null;
+  watchers: number;
+  defaultBranch: string;
+  language: string | null;
+  description: string | null;
+}
+
+export interface GitHubCacheEntry {
+  data: GitHubStats;
+  timestamp: number;
+}
+
+export interface GitHubCache {
+  [repo: string]: GitHubCacheEntry;
+}
+
+export interface GitHubError {
+  message: string;
+  status?: number;
 }

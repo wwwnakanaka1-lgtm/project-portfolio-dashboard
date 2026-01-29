@@ -138,7 +138,8 @@
       "description": "AIによるコードレビュー自動化ツール",
       "path": "C:/Users/wwwhi/Create/auto-code-reviewer",
       "technologies": ["Python", "Groq"],
-      "status": "active"
+      "status": "active",
+      "githubRepo": "wwwnakanaka1-lgtm/ai-code-reviewer"
     },
     {
       "id": "claude-task-dashboard",

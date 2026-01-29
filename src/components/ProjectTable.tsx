@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Project, Categories } from "@/lib/types";
+import { FavoriteButton } from "@/components/FavoriteButton";
 
 interface ProjectTableProps {
   projects: Project[];
@@ -9,6 +10,8 @@ interface ProjectTableProps {
   selectedCategory?: string | null;
   selectedTech?: string | null;
   onProjectClick?: (project: Project) => void;
+  favorites?: Set<string>;
+  onToggleFavorite?: (projectId: string) => void;
 }
 
 export function ProjectTable({
@@ -17,6 +20,8 @@ export function ProjectTable({
   selectedCategory,
   selectedTech,
   onProjectClick,
+  favorites,
+  onToggleFavorite,
 }: ProjectTableProps) {
   const [sortKey, setSortKey] = useState<"name" | "category" | "status">("category");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -125,6 +130,9 @@ export function ProjectTable({
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
+              {favorites && onToggleFavorite && (
+                <th className="px-2 py-3 w-10"></th>
+              )}
               <th
                 className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
                 onClick={() => handleSort("name")}
@@ -155,6 +163,16 @@ export function ProjectTable({
                 className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                 onClick={() => onProjectClick?.(project)}
               >
+                {favorites && onToggleFavorite && (
+                  <td className="px-2 py-4">
+                    <FavoriteButton
+                      projectId={project.id}
+                      isFavorite={favorites.has(project.id)}
+                      onToggle={onToggleFavorite}
+                      size="sm"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-4">
                   <div className="text-sm font-medium text-gray-900 dark:text-white">
                     {project.name}
