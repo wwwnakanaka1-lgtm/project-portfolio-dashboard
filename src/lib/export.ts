@@ -1,32 +1,28 @@
 import { Project, Categories } from "./types";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 
 /**
  * Export projects to CSV format
- * Columns: ID, Name, Category, Description, Technologies, Status
  */
 export function exportToCSV(projects: Project[], categories: Categories): void {
-  const headers = ["ID", "Name", "Category", "Description", "Technologies", "Status"];
+  const headers = ["ID", "Name", "Category", "Description", "Technologies", "Status", "Path"];
 
   const rows = projects.map((project) => {
     const categoryName = categories[project.category]?.name || project.category;
     return [
-      project.id,
-      project.name,
-      categoryName,
-      // Escape quotes and handle commas in description
-      `"${project.description.replace(/"/g, '""')}"`,
-      `"${project.technologies.join(", ")}"`,
-      project.status,
-    ];
+      escapeCsvField(project.id),
+      escapeCsvField(project.name),
+      escapeCsvField(categoryName),
+      escapeCsvField(project.description),
+      escapeCsvField(project.technologies.join("; ")),
+      escapeCsvField(project.status),
+      escapeCsvField(project.path),
+    ].join(",");
   });
 
-  // Add BOM for Excel UTF-8 compatibility
   const BOM = "\uFEFF";
-  const csvContent = BOM + [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
+  const csvContent = BOM + headers.join(",") + "\n" + rows.join("\n");
 
-  downloadFile(csvContent, "projects.csv", "text/csv;charset=utf-8");
+  triggerDownload(csvContent, "projects.csv", "text/csv;charset=utf-8");
 }
 
 /**
@@ -41,89 +37,67 @@ export function exportToJSON(projects: Project[], categories: Categories): void 
   };
 
   const jsonContent = JSON.stringify(exportData, null, 2);
-  downloadFile(jsonContent, "projects.json", "application/json");
+  triggerDownload(jsonContent, "projects.json", "application/json;charset=utf-8");
 }
 
 /**
- * Export current view to PDF using html2canvas and jspdf
+ * Export to PDF - creates a simple text-based PDF without html2canvas
  */
-export async function exportToPDF(elementId: string = "main-content"): Promise<void> {
-  const element = document.getElementById(elementId);
-  if (!element) {
-    console.error(`Element with id "${elementId}" not found`);
-    return;
-  }
+export async function exportToPDF(): Promise<void> {
+  // Dynamic import to avoid SSR issues
+  const { jsPDF } = await import("jspdf");
 
-  try {
-    // Create canvas from the element
-    const canvas = await html2canvas(element, {
-      scale: 2, // Higher quality
-      useCORS: true,
-      logging: false,
-      backgroundColor: "#ffffff",
-    });
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+  });
 
-    const imgData = canvas.toDataURL("image/png");
+  // Title
+  pdf.setFontSize(18);
+  pdf.text("Project Portfolio Dashboard", 105, 15, { align: "center" });
 
-    // Calculate PDF dimensions (A4 size)
-    const pdf = new jsPDF({
-      orientation: canvas.width > canvas.height ? "landscape" : "portrait",
-      unit: "mm",
-      format: "a4",
-    });
+  // Date
+  pdf.setFontSize(10);
+  pdf.text(`Generated: ${new Date().toLocaleDateString("ja-JP")}`, 105, 22, { align: "center" });
 
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
+  // Note about full data
+  pdf.setFontSize(12);
+  pdf.text("For complete project data, please use CSV or JSON export.", 105, 35, { align: "center" });
 
-    // Calculate image dimensions to fit the page
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
-    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+  // Footer
+  pdf.setFontSize(8);
+  pdf.text("Project Portfolio Dashboard - Export", 105, 290, { align: "center" });
 
-    const finalWidth = imgWidth * ratio;
-    const finalHeight = imgHeight * ratio;
-
-    // Center the image
-    const x = (pdfWidth - finalWidth) / 2;
-    const y = 10; // Small margin from top
-
-    // Add title
-    pdf.setFontSize(16);
-    pdf.text("Project Portfolio Dashboard", pdfWidth / 2, 8, { align: "center" });
-
-    // Add the image
-    pdf.addImage(imgData, "PNG", x, y + 5, finalWidth, finalHeight - 10);
-
-    // Add footer with date
-    pdf.setFontSize(8);
-    pdf.text(
-      `Generated: ${new Date().toLocaleDateString("ja-JP")}`,
-      pdfWidth / 2,
-      pdfHeight - 5,
-      { align: "center" }
-    );
-
-    pdf.save("project-portfolio.pdf");
-  } catch (error) {
-    console.error("PDF export failed:", error);
-    throw error;
-  }
+  pdf.save("project-portfolio.pdf");
 }
 
 /**
- * Helper function to trigger file download
+ * Escape CSV field - handles commas, quotes, and newlines
  */
-function downloadFile(content: string, filename: string, mimeType: string): void {
+function escapeCsvField(field: string): string {
+  if (field.includes(",") || field.includes('"') || field.includes("\n")) {
+    return `"${field.replace(/"/g, '""')}"`;
+  }
+  return field;
+}
+
+/**
+ * Trigger file download
+ */
+function triggerDownload(content: string, filename: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
+  const url = window.URL.createObjectURL(blob);
 
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.style.display = "none";
+
+  document.body.appendChild(a);
+  a.click();
 
   // Cleanup
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
 }

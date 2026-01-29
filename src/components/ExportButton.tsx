@@ -2,26 +2,24 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Project, Categories } from "@/lib/types";
-import { exportToCSV, exportToJSON, exportToPDF } from "@/lib/export";
+import { exportToCSV, exportToJSON } from "@/lib/export";
+import { exportToHTML } from "@/lib/export-html";
 
 interface ExportButtonProps {
   projects: Project[];
   categories: Categories;
-  mainContentId?: string;
 }
 
-type ExportFormat = "csv" | "json" | "pdf";
+type ExportFormat = "html" | "csv" | "json";
 
 export default function ExportButton({
   projects,
   categories,
-  mainContentId = "main-content",
 }: ExportButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -35,31 +33,32 @@ export default function ExportButton({
 
   const handleExport = async (format: ExportFormat) => {
     setIsExporting(true);
+    setIsOpen(false);
+
     try {
       switch (format) {
+        case "html":
+          exportToHTML(projects, categories);
+          break;
         case "csv":
           exportToCSV(projects, categories);
           break;
         case "json":
           exportToJSON(projects, categories);
           break;
-        case "pdf":
-          await exportToPDF(mainContentId);
-          break;
       }
     } catch (error) {
-      console.error(`Export to ${format.toUpperCase()} failed:`, error);
-      alert(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error(`Export failed:`, error);
+      alert(`エクスポート失敗: ${error instanceof Error ? error.message : "不明なエラー"}`);
     } finally {
       setIsExporting(false);
-      setIsOpen(false);
     }
   };
 
-  const exportOptions: { format: ExportFormat; label: string; icon: string }[] = [
-    { format: "csv", label: "CSV", icon: "csv" },
-    { format: "json", label: "JSON", icon: "json" },
-    { format: "pdf", label: "PDF", icon: "pdf" },
+  const exportOptions: { format: ExportFormat; label: string; description: string; icon: string }[] = [
+    { format: "html", label: "HTML レポート", description: "プレゼン形式", icon: "html" },
+    { format: "csv", label: "CSV", description: "Excel用", icon: "csv" },
+    { format: "json", label: "JSON", description: "データ形式", icon: "json" },
   ];
 
   return (
@@ -130,15 +129,29 @@ export default function ExportButton({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 py-1 z-50">
-          {exportOptions.map((option) => (
+        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 py-1 z-50">
+          {exportOptions.map((option, index) => (
             <button
               key={option.format}
               onClick={() => handleExport(option.format)}
-              className="w-full px-4 py-2 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors"
+              className={`w-full px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors ${
+                index === 0 ? "border-b dark:border-gray-700" : ""
+              }`}
             >
               <ExportIcon type={option.icon} />
-              <span>Export to {option.label}</span>
+              <div>
+                <div className="text-gray-700 dark:text-gray-200 font-medium">
+                  {option.label}
+                  {index === 0 && (
+                    <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-2 py-0.5 rounded">
+                      推奨
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  {option.description}
+                </div>
+              </div>
             </button>
           ))}
         </div>
@@ -148,9 +161,15 @@ export default function ExportButton({
 }
 
 function ExportIcon({ type }: { type: string }) {
-  const iconClasses = "w-5 h-5";
+  const iconClasses = "w-5 h-5 text-gray-500 dark:text-gray-400";
 
   switch (type) {
+    case "html":
+      return (
+        <svg className={iconClasses} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 17.56L16.07 16.43L16.62 10.33H9.38L9.2 8.3H16.8L17 6.31H7L7.56 12.32H14.45L14.22 14.9L12 15.5L9.78 14.9L9.64 13.24H7.64L7.93 16.43L12 17.56M4.07 3H19.93L18.5 19.2L12 21L5.5 19.2L4.07 3Z" />
+        </svg>
+      );
     case "csv":
       return (
         <svg className={iconClasses} viewBox="0 0 24 24" fill="currentColor">
@@ -161,12 +180,6 @@ function ExportIcon({ type }: { type: string }) {
       return (
         <svg className={iconClasses} viewBox="0 0 24 24" fill="currentColor">
           <path d="M5 3h2v2H5v5a2 2 0 01-2 2 2 2 0 012 2v5h2v2H5c-1.07-.27-2-.9-2-2v-4a2 2 0 00-2-2H0v-2h1a2 2 0 002-2V5a2 2 0 012-2m14 0a2 2 0 012 2v4a2 2 0 002 2h1v2h-1a2 2 0 00-2 2v4a2 2 0 01-2 2h-2v-2h2v-5a2 2 0 012-2 2 2 0 01-2-2V5h-2V3h2m-7 12a1 1 0 011 1 1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1m-4 0a1 1 0 011 1 1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1m8 0a1 1 0 011 1 1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1z" />
-        </svg>
-      );
-    case "pdf":
-      return (
-        <svg className={iconClasses} viewBox="0 0 24 24" fill="currentColor">
-          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM6 20V4h7v5h5v11H6zm2-6h2v-2h1a1 1 0 001-1V9a1 1 0 00-1-1H8v6zm1-4h1v1H9V10zm3 4h2a1 1 0 001-1v-2a1 1 0 00-1-1h-2v4zm1-3h1v2h-1v-2zm5 0h-1v1h1v1h-1v1h-1v-4h2v1z" />
         </svg>
       );
     default:

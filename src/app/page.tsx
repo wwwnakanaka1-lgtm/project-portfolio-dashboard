@@ -10,12 +10,13 @@ import ExportButton from "@/components/ExportButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { CommandPalette, SearchTrigger } from "@/components/CommandPalette";
 import { FavoritesFilter, useFavorites } from "@/components/FavoriteButton";
+import { UsageStats } from "@/components/UsageStats";
 import projectData from "@/lib/projects.json";
 import { Project, ProjectData } from "@/lib/types";
 
 const data = projectData as ProjectData;
 
-type Tab = "overview" | "graph" | "table";
+type Tab = "overview" | "graph" | "table" | "usage";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -57,6 +58,7 @@ export default function Home() {
     { id: "overview", label: "概要" },
     { id: "graph", label: "関係性グラフ" },
     { id: "table", label: "一覧" },
+    { id: "usage", label: "使用量・コスト" },
   ];
 
   return (
@@ -85,7 +87,6 @@ export default function Home() {
             <ExportButton
               projects={data.projects}
               categories={data.categories}
-              mainContentId="main-content"
             />
           </div>
         </div>
@@ -241,6 +242,8 @@ export default function Home() {
             onToggleFavorite={toggleFavorite}
           />
         )}
+
+        {activeTab === "usage" && <UsageStats />}
       </main>
 
       {/* Detail Panel Modal */}
