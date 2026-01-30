@@ -17,7 +17,7 @@ import { Project, ProjectData } from "@/lib/types";
 
 const data = projectData as ProjectData;
 
-type Tab = "claude" | "overview" | "graph" | "table" | "usage";
+type Tab = "claude" | "overview" | "graph" | "usage";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("claude");
@@ -59,7 +59,6 @@ export default function Home() {
     { id: "claude", label: "Claude Monitor" },
     { id: "overview", label: "概要" },
     { id: "graph", label: "関係性グラフ" },
-    { id: "table", label: "一覧" },
     { id: "usage", label: "使用量・コスト" },
   ];
 
@@ -234,18 +233,6 @@ export default function Home() {
             projects={filteredByFavorites}
             categories={data.categories}
             onProjectClick={handleProjectClick}
-          />
-        )}
-
-        {activeTab === "table" && (
-          <ProjectTable
-            projects={filteredByFavorites}
-            categories={data.categories}
-            selectedCategory={selectedCategory}
-            selectedTech={selectedTech}
-            onProjectClick={handleProjectClick}
-            favorites={favorites}
-            onToggleFavorite={toggleFavorite}
           />
         )}
 

@@ -48,6 +48,8 @@ export function StatsSummary({
         </span>
         <span className="text-sm text-gray-500 dark:text-gray-400">
           今日のコスト
+          <br />
+          <small className="text-green-600 dark:text-green-400">{formatJpy(todayCost)}</small>
         </span>
       </div>
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 text-center">
@@ -56,6 +58,8 @@ export function StatsSummary({
         </span>
         <span className="text-sm text-gray-500 dark:text-gray-400">
           今週のコスト
+          <br />
+          <small className="text-green-600 dark:text-green-400">{formatJpy(weekCost)}</small>
         </span>
       </div>
       <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4 text-center">
