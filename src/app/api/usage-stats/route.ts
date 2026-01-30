@@ -185,6 +185,78 @@ export async function GET() {
     // Sort daily activity by date
     const dailyActivity = Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date));
 
+    // Calculate period costs
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
+
+    // Week start (Monday)
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1));
+    const weekStartStr = weekStart.toISOString().split("T")[0];
+
+    // Month start
+    const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+
+    // Last month key
+    const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+    let todayCost = 0;
+    let weekCost = 0;
+    let monthCost = 0;
+    let lastMonthCost = 0;
+    let todayMessages = 0;
+
+    // Monthly aggregation
+    const monthlyCosts: Record<string, { cost: number; days: number; tokens: TokenUsage }> = {};
+
+    for (const day of dailyActivity) {
+      const monthKey = day.date.substring(0, 7);
+
+      // Aggregate by month
+      if (!monthlyCosts[monthKey]) {
+        monthlyCosts[monthKey] = {
+          cost: 0,
+          days: 0,
+          tokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+        };
+      }
+      monthlyCosts[monthKey].cost += day.cost;
+      monthlyCosts[monthKey].days += 1;
+      monthlyCosts[monthKey].tokens.inputTokens += day.tokens.inputTokens;
+      monthlyCosts[monthKey].tokens.outputTokens += day.tokens.outputTokens;
+      monthlyCosts[monthKey].tokens.cacheReadTokens += day.tokens.cacheReadTokens;
+      monthlyCosts[monthKey].tokens.cacheCreateTokens += day.tokens.cacheCreateTokens;
+
+      // Period costs
+      if (day.date === todayStr) {
+        todayCost = day.cost;
+        todayMessages = day.messageCount;
+      }
+      if (day.date >= weekStartStr) {
+        weekCost += day.cost;
+      }
+      if (day.date >= monthStartStr) {
+        monthCost += day.cost;
+      }
+      if (day.date.startsWith(lastMonthKey)) {
+        lastMonthCost += day.cost;
+      }
+    }
+
+    // Build monthly summary array
+    const monthlySummary = Object.entries(monthlyCosts)
+      .map(([month, data]) => ({
+        month,
+        cost: Math.round(data.cost * 100) / 100,
+        days: data.days,
+        inputTokens: data.tokens.inputTokens,
+        outputTokens: data.tokens.outputTokens,
+        cacheReadTokens: data.tokens.cacheReadTokens,
+        cacheCreateTokens: data.tokens.cacheCreateTokens,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
     return NextResponse.json({
       totalCost: Math.round(totalCost * 100) / 100,
       totalTokens,
@@ -192,6 +264,14 @@ export async function GET() {
       totalMessages,
       modelUsage,
       dailyActivity,
+      // Period costs
+      todayCost: Math.round(todayCost * 100) / 100,
+      weekCost: Math.round(weekCost * 100) / 100,
+      monthCost: Math.round(monthCost * 100) / 100,
+      lastMonthCost: Math.round(lastMonthCost * 100) / 100,
+      todayMessages,
+      // Monthly summary
+      monthlySummary,
       lastUpdated: new Date().toISOString(),
       dataSource: "jsonl",
     });

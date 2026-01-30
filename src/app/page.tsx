@@ -11,15 +11,16 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { CommandPalette, SearchTrigger } from "@/components/CommandPalette";
 import { FavoritesFilter, useFavorites } from "@/components/FavoriteButton";
 import { UsageStats } from "@/components/UsageStats";
+import { ClaudeMonitor } from "@/components/claude/ClaudeMonitor";
 import projectData from "@/lib/projects.json";
 import { Project, ProjectData } from "@/lib/types";
 
 const data = projectData as ProjectData;
 
-type Tab = "overview" | "graph" | "table" | "usage";
+type Tab = "claude" | "overview" | "graph" | "table" | "usage";
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("claude");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTech, setSelectedTech] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -55,6 +56,7 @@ export default function Home() {
   };
 
   const tabs: { id: Tab; label: string }[] = [
+    { id: "claude", label: "Claude Monitor" },
     { id: "overview", label: "概要" },
     { id: "graph", label: "関係性グラフ" },
     { id: "table", label: "一覧" },
@@ -200,6 +202,8 @@ export default function Home() {
 
       {/* Main Content */}
       <main id="main-content" className="max-w-7xl mx-auto px-4 py-6">
+        {activeTab === "claude" && <ClaudeMonitor />}
+
         {activeTab === "overview" && (
           <div className="space-y-6">
             <CategoryChart
