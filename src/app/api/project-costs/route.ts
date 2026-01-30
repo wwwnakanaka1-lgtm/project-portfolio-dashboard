@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { getCachedSync } from "@/lib/api-cache";
+
+// Cache TTL - 60 seconds for project costs (expensive computation)
+const PROJECT_COSTS_CACHE_TTL = 60000;
 
 // Pricing per 1M tokens
 const MODEL_PRICING = {
@@ -35,26 +39,45 @@ interface ProjectCost {
   lastUsed: string;
 }
 
-// Find sessions-index.json path
-function findSessionsFile(): string {
-  const homeDir = os.homedir();
-  const baseDir = path.join(homeDir, ".claude", "projects");
-  const variations = ["C--Users-wwwhi", "c--Users-wwwhi"];
+// Convert directory name to project path
+// e.g., "c--Users-wwwhi-Create-fukunage-line-bot" -> "c:/Users/wwwhi/Create/fukunage-line-bot"
+function dirNameToProjectPath(dirName: string): string {
+  // Replace -- with : for drive letter, then - with /
+  // But be careful: only the first -- is the drive separator
+  let result = dirName;
 
-  for (const dir of variations) {
-    const filePath = path.join(baseDir, dir, "sessions-index.json");
-    if (fs.existsSync(filePath)) {
-      return filePath;
-    }
+  // Handle drive letter (first --)
+  const driveMatch = result.match(/^([a-zA-Z])--/);
+  if (driveMatch) {
+    result = driveMatch[1] + ":" + result.substring(3);
   }
 
-  return path.join(baseDir, "C--Users-wwwhi", "sessions-index.json");
+  // Replace remaining - with /
+  result = result.replace(/-/g, "/");
+
+  return result;
+}
+
+// Extract project name from path
+// e.g., "c:/Users/wwwhi/Create/fukunage-line-bot" -> "fukunage-line-bot"
+function getProjectName(projectPath: string): string {
+  const parts = projectPath.split(/[/\\]/);
+  // Find the part after "Create" if it exists
+  const createIndex = parts.findIndex(p => p.toLowerCase() === "create");
+  if (createIndex !== -1 && createIndex < parts.length - 1) {
+    return parts[createIndex + 1];
+  }
+  return parts[parts.length - 1] || projectPath;
 }
 
 // Parse JSONL file to get token usage
-function getSessionTokenUsage(jsonlPath: string): TokenUsage | null {
+function getSessionTokenUsage(jsonlPath: string): { usage: TokenUsage; lastModified: string } | null {
   try {
+    const stats = fs.statSync(jsonlPath);
     const content = fs.readFileSync(jsonlPath, "utf8");
+
+    if (!content.trim()) return null;
+
     const lines = content.trim().split("\n");
 
     let inputTokens = 0;
@@ -78,10 +101,13 @@ function getSessionTokenUsage(jsonlPath: string): TokenUsage | null {
     }
 
     return {
-      inputTokens,
-      outputTokens,
-      cacheReadTokens,
-      cacheCreationTokens,
+      usage: {
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
+      },
+      lastModified: stats.mtime.toISOString(),
     };
   } catch {
     return null;
@@ -99,76 +125,176 @@ function calculateCost(usage: TokenUsage): number {
   return cost;
 }
 
-export async function GET() {
-  try {
-    const sessionsFile = findSessionsFile();
+// Compute project costs (expensive operation, cached)
+function computeProjectCosts(): { costs: ProjectCost[]; totalCost: number; totalProjects: number } | { error: string } {
+  const homeDir = os.homedir();
+  const projectsDir = path.join(homeDir, ".claude", "projects");
 
-    if (!fs.existsSync(sessionsFile)) {
-      return NextResponse.json({ costs: [], error: "Sessions file not found" });
+  if (!fs.existsSync(projectsDir)) {
+    return { error: "Projects directory not found" };
+  }
+
+  // Get all project directories
+  const projectDirs = fs.readdirSync(projectsDir).filter(name => {
+    const fullPath = path.join(projectsDir, name);
+    try {
+      return fs.statSync(fullPath).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+
+  // Aggregate costs by project
+  const projectCosts = new Map<string, {
+    totalCost: number;
+    sessionCount: number;
+    totalTokens: number;
+    lastUsed: string;
+  }>();
+
+  for (const dirName of projectDirs) {
+    const projectPath = dirNameToProjectPath(dirName);
+    const projectName = getProjectName(projectPath);
+
+    // Skip the root user directory (just "c:/Users/wwwhi" or similar)
+    if (!projectPath.toLowerCase().includes("/create/")) {
+      continue;
     }
 
-    const sessionsData = JSON.parse(fs.readFileSync(sessionsFile, "utf8"));
-    const sessions = sessionsData.sessions || [];
+    const dirPath = path.join(projectsDir, dirName);
 
-    // Group sessions by projectPath
-    const projectCosts = new Map<string, {
-      totalCost: number;
-      sessionCount: number;
-      totalTokens: number;
-      lastUsed: string;
-    }>();
+    // Get all JSONL files in this directory
+    let files: string[];
+    try {
+      files = fs.readdirSync(dirPath).filter(f => f.endsWith(".jsonl"));
+    } catch {
+      continue;
+    }
 
-    for (const session of sessions) {
-      if (!session.projectPath) continue;
+    for (const file of files) {
+      // Skip agent files (they're subprocesses, already counted in main session)
+      if (file.startsWith("agent-")) continue;
 
-      const jsonlPath = session.fullPath;
-      if (!jsonlPath || !fs.existsSync(jsonlPath)) continue;
+      const jsonlPath = path.join(dirPath, file);
+      const result = getSessionTokenUsage(jsonlPath);
 
-      const tokenUsage = getSessionTokenUsage(jsonlPath);
-      if (!tokenUsage) continue;
+      if (!result || (result.usage.inputTokens === 0 && result.usage.outputTokens === 0)) {
+        continue;
+      }
 
-      const cost = calculateCost(tokenUsage);
-      const totalTokens = tokenUsage.inputTokens + tokenUsage.outputTokens +
-        tokenUsage.cacheReadTokens + tokenUsage.cacheCreationTokens;
+      const cost = calculateCost(result.usage);
+      const totalTokens = result.usage.inputTokens + result.usage.outputTokens +
+        result.usage.cacheReadTokens + result.usage.cacheCreationTokens;
 
-      const existing = projectCosts.get(session.projectPath) || {
+      const existing = projectCosts.get(projectName) || {
         totalCost: 0,
         sessionCount: 0,
         totalTokens: 0,
-        lastUsed: session.modified || session.created,
+        lastUsed: result.lastModified,
       };
 
       existing.totalCost += cost;
       existing.sessionCount += 1;
       existing.totalTokens += totalTokens;
 
-      // Update lastUsed if this session is more recent
-      if (session.modified && session.modified > existing.lastUsed) {
-        existing.lastUsed = session.modified;
+      if (result.lastModified > existing.lastUsed) {
+        existing.lastUsed = result.lastModified;
       }
 
-      projectCosts.set(session.projectPath, existing);
+      projectCosts.set(projectName, existing);
+    }
+  }
+
+  // Also scan the main sessions-index.json for sessions with specific project paths
+  const mainDirs = ["C--Users-wwwhi", "c--Users-wwwhi"];
+  for (const mainDir of mainDirs) {
+    const sessionsFile = path.join(projectsDir, mainDir, "sessions-index.json");
+    if (!fs.existsSync(sessionsFile)) continue;
+
+    try {
+      const sessionsData = JSON.parse(fs.readFileSync(sessionsFile, "utf8"));
+      const entries = sessionsData.entries || [];
+
+      for (const session of entries) {
+        const jsonlPath = session.fullPath;
+        if (!jsonlPath || !fs.existsSync(jsonlPath)) continue;
+
+        const result = getSessionTokenUsage(jsonlPath);
+        if (!result || (result.usage.inputTokens === 0 && result.usage.outputTokens === 0)) {
+          continue;
+        }
+
+        // Try to extract project name from firstPrompt (IDE opened file paths)
+        let projectName: string | null = null;
+        if (session.firstPrompt) {
+          const match = session.firstPrompt.match(/Create[/\\]([a-zA-Z0-9_-]+)[/\\]/i);
+          if (match) {
+            projectName = match[1];
+          }
+        }
+
+        if (!projectName) continue;
+
+        const cost = calculateCost(result.usage);
+        const totalTokens = result.usage.inputTokens + result.usage.outputTokens +
+          result.usage.cacheReadTokens + result.usage.cacheCreationTokens;
+
+        const existing = projectCosts.get(projectName) || {
+          totalCost: 0,
+          sessionCount: 0,
+          totalTokens: 0,
+          lastUsed: session.modified || session.created || result.lastModified,
+        };
+
+        existing.totalCost += cost;
+        existing.sessionCount += 1;
+        existing.totalTokens += totalTokens;
+
+        const sessionDate = session.modified || session.created || result.lastModified;
+        if (sessionDate > existing.lastUsed) {
+          existing.lastUsed = sessionDate;
+        }
+
+        projectCosts.set(projectName, existing);
+      }
+    } catch {
+      // Skip if error reading sessions file
+    }
+  }
+
+  // Convert to array
+  const costs: ProjectCost[] = Array.from(projectCosts.entries()).map(
+    ([projectName, data]) => ({
+      projectPath: `C:/Users/wwwhi/Create/${projectName}`,
+      projectName,
+      totalCost: data.totalCost,
+      sessionCount: data.sessionCount,
+      totalTokens: data.totalTokens,
+      lastUsed: data.lastUsed,
+    })
+  );
+
+  // Sort by cost (highest first)
+  costs.sort((a, b) => b.totalCost - a.totalCost);
+
+  return {
+    costs,
+    totalCost: costs.reduce((sum, c) => sum + c.totalCost, 0),
+    totalProjects: costs.length,
+  };
+}
+
+export async function GET() {
+  try {
+    // Use cached result if available
+    const result = getCachedSync("project-costs", PROJECT_COSTS_CACHE_TTL, computeProjectCosts);
+
+    if ("error" in result) {
+      return NextResponse.json({ costs: [], error: result.error });
     }
 
-    // Convert to array and extract project names
-    const costs: ProjectCost[] = Array.from(projectCosts.entries()).map(
-      ([projectPath, data]) => ({
-        projectPath,
-        projectName: projectPath.split(/[/\\]/).pop() || projectPath,
-        totalCost: data.totalCost,
-        sessionCount: data.sessionCount,
-        totalTokens: data.totalTokens,
-        lastUsed: data.lastUsed,
-      })
-    );
-
-    // Sort by cost (highest first)
-    costs.sort((a, b) => b.totalCost - a.totalCost);
-
     return NextResponse.json({
-      costs,
-      totalCost: costs.reduce((sum, c) => sum + c.totalCost, 0),
-      totalProjects: costs.length,
+      ...result,
       lastUpdated: new Date().toISOString(),
     });
   } catch (error) {

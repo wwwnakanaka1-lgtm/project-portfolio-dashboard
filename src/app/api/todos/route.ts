@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { getCachedSync } from "@/lib/api-cache";
+
+// Cache TTL - 10 seconds for todos (needs to be fresh but not too expensive)
+const TODOS_CACHE_TTL = 10000;
 
 interface Todo {
   content: string;
@@ -70,8 +74,12 @@ function readTodosForSession(sessionId: string): Todo[] {
   }
 }
 
-// Read all todos (for overview)
+// Read all todos (for overview) - with caching
 function readAllTodos(): SessionTodos[] {
+  return getCachedSync("all-todos", TODOS_CACHE_TTL, readAllTodosUncached);
+}
+
+function readAllTodosUncached(): SessionTodos[] {
   const todosDir = getTodosDir();
 
   if (!fs.existsSync(todosDir)) {

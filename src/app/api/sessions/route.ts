@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { getCachedSync } from "@/lib/api-cache";
+
+// Cache TTLs
+const SESSIONS_CACHE_TTL = 5000; // 5 seconds for main session data
+const UNINDEXED_CACHE_TTL = 60000; // 60 seconds for unindexed session scan (expensive)
+const TOKEN_USAGE_CACHE_TTL = 30000; // 30 seconds for token usage per file
 
 // Pricing per 1M tokens
 const MODEL_PRICING = {
@@ -67,39 +73,45 @@ function findSessionsFile(): string {
   return path.join(baseDir, "C--Users-wwwhi", "sessions-index.json");
 }
 
-// Parse JSONL file to get token usage
+// Parse JSONL file to get token usage (with caching)
 function getSessionTokenUsage(jsonlPath: string): TokenUsage | null {
+  // Check file modification time - if file hasn't changed, use cached value
   try {
-    const content = fs.readFileSync(jsonlPath, "utf8");
-    const lines = content.trim().split("\n");
+    const stats = fs.statSync(jsonlPath);
+    const cacheKey = `token-usage:${jsonlPath}:${stats.mtime.getTime()}`;
 
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let cacheReadTokens = 0;
-    let cacheCreationTokens = 0;
+    return getCachedSync(cacheKey, TOKEN_USAGE_CACHE_TTL, () => {
+      const content = fs.readFileSync(jsonlPath, "utf8");
+      const lines = content.trim().split("\n");
 
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === "assistant" && entry.message?.usage) {
-          const usage = entry.message.usage;
-          inputTokens += usage.input_tokens || 0;
-          outputTokens += usage.output_tokens || 0;
-          cacheReadTokens += usage.cache_read_input_tokens || 0;
-          cacheCreationTokens += usage.cache_creation_input_tokens || 0;
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let cacheReadTokens = 0;
+      let cacheCreationTokens = 0;
+
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.type === "assistant" && entry.message?.usage) {
+            const usage = entry.message.usage;
+            inputTokens += usage.input_tokens || 0;
+            outputTokens += usage.output_tokens || 0;
+            cacheReadTokens += usage.cache_read_input_tokens || 0;
+            cacheCreationTokens += usage.cache_creation_input_tokens || 0;
+          }
+        } catch {
+          // Skip invalid lines
         }
-      } catch {
-        // Skip invalid lines
       }
-    }
 
-    return {
-      inputTokens,
-      outputTokens,
-      cacheReadTokens,
-      cacheCreationTokens,
-      totalTokens: inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens,
-    };
+      return {
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
+        totalTokens: inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens,
+      };
+    });
   } catch {
     return null;
   }
@@ -118,7 +130,16 @@ function calculateCost(tokens: TokenUsage, model: string = "claude-opus-4-5-2025
 }
 
 // Find unindexed sessions (directories with JSONL that aren't in sessions-index.json)
+// This is expensive, so cache it for longer
 function findUnindexedSessions(projectsDir: string, indexedSessionIds: Set<string>): FormattedSession[] {
+  const cacheKey = `unindexed-sessions:${projectsDir}`;
+
+  return getCachedSync(cacheKey, UNINDEXED_CACHE_TTL, () => {
+    return findUnindexedSessionsUncached(projectsDir, indexedSessionIds);
+  });
+}
+
+function findUnindexedSessionsUncached(projectsDir: string, indexedSessionIds: Set<string>): FormattedSession[] {
   const unindexedSessions: FormattedSession[] = [];
 
   try {
@@ -236,8 +257,12 @@ function findUnindexedSessions(projectsDir: string, indexedSessionIds: Set<strin
   return unindexedSessions;
 }
 
-// Read and format sessions
+// Read and format sessions (with caching)
 function readSessions(): FormattedSession[] {
+  return getCachedSync("sessions-list", SESSIONS_CACHE_TTL, readSessionsUncached);
+}
+
+function readSessionsUncached(): FormattedSession[] {
   try {
     const sessionsFile = findSessionsFile();
     const projectsDir = path.dirname(sessionsFile);
