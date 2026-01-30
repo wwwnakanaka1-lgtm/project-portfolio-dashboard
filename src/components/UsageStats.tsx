@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -8,130 +8,70 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
   CartesianGrid,
 } from "recharts";
-import {
-  ClaudeUsageStats,
-  MODEL_PRICING,
-  CostBreakdown,
-  UsageSummary,
-} from "@/lib/usage-types";
 import { getExchangeRate } from "@/lib/exchange-rate";
 
-// Fallback rate if API fetch hasn't completed yet
 const FALLBACK_RATE = 150;
 
-// Embedded stats data - synced from ~/.claude/stats-cache.json
-const USAGE_STATS: ClaudeUsageStats = {
-  version: 1,
-  lastComputedDate: "2026-01-29",
-  dailyActivity: [
-    { date: "2025-12-23", messageCount: 477, sessionCount: 2, toolCallCount: 162 },
-    { date: "2025-12-26", messageCount: 2085, sessionCount: 2, toolCallCount: 547 },
-    { date: "2025-12-27", messageCount: 2012, sessionCount: 3, toolCallCount: 534 },
-    { date: "2025-12-28", messageCount: 467, sessionCount: 1, toolCallCount: 122 },
-    { date: "2025-12-30", messageCount: 387, sessionCount: 1, toolCallCount: 57 },
-    { date: "2026-01-02", messageCount: 909, sessionCount: 1, toolCallCount: 259 },
-    { date: "2026-01-03", messageCount: 708, sessionCount: 3, toolCallCount: 192 },
-    { date: "2026-01-17", messageCount: 1085, sessionCount: 2, toolCallCount: 299 },
-    { date: "2026-01-18", messageCount: 1277, sessionCount: 5, toolCallCount: 334 },
-    { date: "2026-01-19", messageCount: 1647, sessionCount: 7, toolCallCount: 371 },
-    { date: "2026-01-22", messageCount: 147, sessionCount: 1, toolCallCount: 42 },
-    { date: "2026-01-23", messageCount: 560, sessionCount: 1, toolCallCount: 91 },
-    { date: "2026-01-24", messageCount: 1473, sessionCount: 1, toolCallCount: 70 },
-    { date: "2026-01-25", messageCount: 7235, sessionCount: 4, toolCallCount: 950 },
-    { date: "2026-01-29", messageCount: 71, sessionCount: 1, toolCallCount: 2 },
-  ],
-  dailyModelTokens: [],
-  modelUsage: {
-    "claude-sonnet-4-5-20250929": {
-      inputTokens: 507,
-      outputTokens: 145844,
-      cacheReadInputTokens: 20862949,
-      cacheCreationInputTokens: 605503,
-      webSearchRequests: 0,
-      costUSD: 0,
-      contextWindow: 0,
-    },
-    "claude-opus-4-5-20251101": {
-      inputTokens: 306889,
-      outputTokens: 1830566,
-      cacheReadInputTokens: 784428260,
-      cacheCreationInputTokens: 57426837,
-      webSearchRequests: 0,
-      costUSD: 0,
-      contextWindow: 0,
-    },
-  },
-  totalSessions: 35,
-  totalMessages: 20540,
-  longestSession: {
-    sessionId: "1baa2f6e-f54e-4c3e-af6d-f9cbf9ee1de2",
-    duration: 163391913,
-    messageCount: 206,
-    timestamp: "2026-01-19T14:10:30.598Z",
-  },
-  firstSessionDate: "2025-12-23T16:04:16.013Z",
-  hourCounts: {},
-};
+interface ModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreateTokens: number;
+  cost: number;
+}
 
-function calculateCost(model: string, usage: ClaudeUsageStats["modelUsage"][string]): CostBreakdown {
-  const pricing = MODEL_PRICING[model as keyof typeof MODEL_PRICING] || MODEL_PRICING["claude-opus-4-5-20251101"];
+interface DailyActivity {
+  date: string;
+  messageCount: number;
+  sessionCount: number;
+  toolCallCount: number;
+}
 
-  const inputCost = (usage.inputTokens / 1_000_000) * pricing.input;
-  const outputCost = (usage.outputTokens / 1_000_000) * pricing.output;
-  const cacheReadCost = (usage.cacheReadInputTokens / 1_000_000) * pricing.cacheRead;
-  const cacheCreationCost = (usage.cacheCreationInputTokens / 1_000_000) * pricing.cacheCreation;
-
-  const totalCost = inputCost + outputCost + cacheReadCost + cacheCreationCost;
-  const totalTokens = usage.inputTokens + usage.outputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
-
-  return {
-    model,
-    inputCost,
-    outputCost,
-    cacheReadCost,
-    cacheCreationCost,
-    totalCost,
-    totalTokens,
-  };
+interface UsageData {
+  totalCost: number;
+  totalTokens: number;
+  totalSessions: number;
+  totalMessages: number;
+  modelUsage: Record<string, ModelUsage>;
+  dailyActivity: DailyActivity[];
+  lastUpdated: string;
+  dataSource: string;
 }
 
 export function UsageStats() {
   const [exchangeRate, setExchangeRate] = useState(FALLBACK_RATE);
   const [rateSource, setRateSource] = useState<"api" | "fallback">("fallback");
+  const [data, setData] = useState<UsageData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Fetch exchange rate
     getExchangeRate().then((result) => {
       setExchangeRate(result.rate);
       setRateSource(result.source);
     });
-  }, []);
 
-  const summary: UsageSummary = useMemo(() => {
-    const costByModel: CostBreakdown[] = Object.entries(USAGE_STATS.modelUsage).map(
-      ([model, usage]) => calculateCost(model, usage)
-    );
-
-    const totalCost = costByModel.reduce((sum, c) => sum + c.totalCost, 0);
-    const totalTokens = costByModel.reduce((sum, c) => sum + c.totalTokens, 0);
-
-    return {
-      totalCost,
-      totalTokens,
-      totalSessions: USAGE_STATS.totalSessions,
-      totalMessages: USAGE_STATS.totalMessages,
-      costByModel,
-      dailyActivity: USAGE_STATS.dailyActivity.slice(-14), // Last 14 days
-      recentDays: 14,
-    };
+    // Fetch usage data from API
+    fetch("/api/usage-stats")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch usage data");
+        return res.json();
+      })
+      .then((data) => {
+        setData(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
   }, []);
 
   const formatUSD = (value: number) => `$${value.toFixed(2)}`;
   const formatJPY = (value: number) => `¥${Math.round(value * exchangeRate).toLocaleString()}`;
-  const formatBoth = (value: number) => `$${value.toFixed(2)} (¥${Math.round(value * exchangeRate).toLocaleString()})`;
   const formatTokens = (value: number) => {
     if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
     if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -139,11 +79,36 @@ export function UsageStats() {
     return value.toString();
   };
 
-  const chartData = summary.dailyActivity.map((d) => ({
-    date: d.date.slice(5), // MM-DD format
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="animate-pulse">
+          <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-1/3 mb-4"></div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-24 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="text-red-500">エラー: {error || "データを取得できませんでした"}</div>
+      </div>
+    );
+  }
+
+  const chartData = data.dailyActivity.slice(-14).map((d) => ({
+    date: d.date.slice(5),
     messages: d.messageCount,
     tools: d.toolCallCount,
   }));
+
+  const modelEntries = Object.entries(data.modelUsage).sort((a, b) => b[1].cost - a[1].cost);
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -154,20 +119,20 @@ export function UsageStats() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-4 text-white">
-          <div className="text-2xl font-bold">{formatUSD(summary.totalCost)}</div>
-          <div className="text-lg font-semibold opacity-90">{formatJPY(summary.totalCost)}</div>
+          <div className="text-2xl font-bold">{formatUSD(data.totalCost)}</div>
+          <div className="text-lg font-semibold opacity-90">{formatJPY(data.totalCost)}</div>
           <div className="text-sm opacity-75">推定総コスト</div>
         </div>
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-4 text-white">
-          <div className="text-2xl font-bold">{formatTokens(summary.totalTokens)}</div>
+          <div className="text-2xl font-bold">{formatTokens(data.totalTokens)}</div>
           <div className="text-sm opacity-90">総トークン数</div>
         </div>
         <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg p-4 text-white">
-          <div className="text-2xl font-bold">{summary.totalSessions}</div>
+          <div className="text-2xl font-bold">{data.totalSessions}</div>
           <div className="text-sm opacity-90">セッション数</div>
         </div>
         <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg p-4 text-white">
-          <div className="text-2xl font-bold">{summary.totalMessages.toLocaleString()}</div>
+          <div className="text-2xl font-bold">{data.totalMessages.toLocaleString()}</div>
           <div className="text-sm opacity-90">メッセージ数</div>
         </div>
       </div>
@@ -178,16 +143,27 @@ export function UsageStats() {
           モデル別コスト内訳
         </h3>
         <div className="space-y-3">
-          {summary.costByModel.map((cost) => {
-            const modelName = cost.model.includes("opus") ? "Opus 4.5" : "Sonnet 4.5";
-            const percentage = (cost.totalCost / summary.totalCost) * 100;
+          {modelEntries.map(([model, usage]) => {
+            const modelName = model.includes("opus") ? "Opus 4.5" : "Sonnet 4.5";
+            const percentage = (usage.cost / data.totalCost) * 100;
+
+            // Calculate individual costs
+            const pricing = model.includes("opus")
+              ? { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 }
+              : { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 };
+
+            const inputCost = (usage.inputTokens / 1e6) * pricing.input;
+            const outputCost = (usage.outputTokens / 1e6) * pricing.output;
+            const cacheReadCost = (usage.cacheReadTokens / 1e6) * pricing.cacheRead;
+            const cacheCreateCost = (usage.cacheCreateTokens / 1e6) * pricing.cacheCreate;
+
             return (
-              <div key={cost.model} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+              <div key={model} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className="font-medium text-gray-900 dark:text-white">{modelName}</span>
                   <div className="text-right">
-                    <span className="text-lg font-bold text-green-600">{formatUSD(cost.totalCost)}</span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">({formatJPY(cost.totalCost)})</span>
+                    <span className="text-lg font-bold text-green-600">{formatUSD(usage.cost)}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">({formatJPY(usage.cost)})</span>
                   </div>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-2">
@@ -199,23 +175,23 @@ export function UsageStats() {
                 <div className="grid grid-cols-4 gap-2 text-xs text-gray-600 dark:text-gray-400">
                   <div>
                     <div className="font-medium">入力</div>
-                    <div>{formatUSD(cost.inputCost)}</div>
-                    <div className="text-gray-400">{formatJPY(cost.inputCost)}</div>
+                    <div>{formatUSD(inputCost)}</div>
+                    <div className="text-gray-400">{formatJPY(inputCost)}</div>
                   </div>
                   <div>
                     <div className="font-medium">出力</div>
-                    <div>{formatUSD(cost.outputCost)}</div>
-                    <div className="text-gray-400">{formatJPY(cost.outputCost)}</div>
+                    <div>{formatUSD(outputCost)}</div>
+                    <div className="text-gray-400">{formatJPY(outputCost)}</div>
                   </div>
                   <div>
                     <div className="font-medium">キャッシュ読取</div>
-                    <div>{formatUSD(cost.cacheReadCost)}</div>
-                    <div className="text-gray-400">{formatJPY(cost.cacheReadCost)}</div>
+                    <div>{formatUSD(cacheReadCost)}</div>
+                    <div className="text-gray-400">{formatJPY(cacheReadCost)}</div>
                   </div>
                   <div>
                     <div className="font-medium">キャッシュ作成</div>
-                    <div>{formatUSD(cost.cacheCreationCost)}</div>
-                    <div className="text-gray-400">{formatJPY(cost.cacheCreationCost)}</div>
+                    <div>{formatUSD(cacheCreateCost)}</div>
+                    <div className="text-gray-400">{formatJPY(cacheCreateCost)}</div>
                   </div>
                 </div>
               </div>
@@ -250,7 +226,7 @@ export function UsageStats() {
 
       {/* Footer */}
       <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-        データソース: ~/.claude/stats-cache.json | 最終更新: {USAGE_STATS.lastComputedDate} | 為替レート: $1 = ¥{exchangeRate}
+        データソース: JSONL直接読み取り | 最終更新: {new Date(data.lastUpdated).toLocaleDateString("ja-JP")} | 為替レート: $1 = ¥{exchangeRate}
         {rateSource === "api" ? " (自動取得)" : " (フォールバック)"}
       </div>
     </div>

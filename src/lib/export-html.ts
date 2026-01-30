@@ -54,23 +54,41 @@ export async function exportToHTML(projects: Project[], categories: Categories):
     }))
     .sort((a, b) => b.count - a.count);
 
-  // Usage stats - synced from ~/.claude/stats-cache.json (2026-01-29)
-  // Opus: input $15/M, output $75/M, cacheRead $1.5/M, cacheCreate $18.75/M
-  // Sonnet: input $3/M, output $15/M, cacheRead $0.3/M, cacheCreate $3.75/M
-  const opusCost = (306889/1e6)*15 + (1830566/1e6)*75 + (784428260/1e6)*1.5 + (57426837/1e6)*18.75;
-  const sonnetCost = (507/1e6)*3 + (145844/1e6)*15 + (20862949/1e6)*0.3 + (605503/1e6)*3.75;
-  const totalCostCalc = opusCost + sonnetCost;
-  const usageStats = {
-    totalCost: Math.round(totalCostCalc * 100) / 100,
-    totalCostJPY: Math.round(totalCostCalc * USD_TO_JPY),
-    totalTokens: 866_000_000,
-    totalSessions: 35,
-    totalMessages: 20540,
-    models: [
-      { name: "Opus 4.5", cost: Math.round(opusCost * 100) / 100, costJPY: Math.round(opusCost * USD_TO_JPY), percentage: Math.round(opusCost / totalCostCalc * 1000) / 10 },
-      { name: "Sonnet 4.5", cost: Math.round(sonnetCost * 100) / 100, costJPY: Math.round(sonnetCost * USD_TO_JPY), percentage: Math.round(sonnetCost / totalCostCalc * 1000) / 10 },
-    ],
+  // Fetch usage stats from API (JSONL direct read)
+  let usageStats = {
+    totalCost: 0,
+    totalCostJPY: 0,
+    totalTokens: 0,
+    totalSessions: 0,
+    totalMessages: 0,
+    models: [] as { name: string; cost: number; costJPY: number; percentage: number }[],
   };
+
+  try {
+    const response = await fetch("/api/usage-stats");
+    if (response.ok) {
+      const data = await response.json();
+      const models = Object.entries(data.modelUsage as Record<string, { cost: number }>)
+        .sort((a, b) => b[1].cost - a[1].cost)
+        .map(([model, usage]) => ({
+          name: model.includes("opus") ? "Opus 4.5" : "Sonnet 4.5",
+          cost: Math.round(usage.cost * 100) / 100,
+          costJPY: Math.round(usage.cost * USD_TO_JPY),
+          percentage: Math.round((usage.cost / data.totalCost) * 1000) / 10,
+        }));
+
+      usageStats = {
+        totalCost: Math.round(data.totalCost * 100) / 100,
+        totalCostJPY: Math.round(data.totalCost * USD_TO_JPY),
+        totalTokens: data.totalTokens,
+        totalSessions: data.totalSessions,
+        totalMessages: data.totalMessages,
+        models,
+      };
+    }
+  } catch (err) {
+    console.warn("Failed to fetch usage stats for export:", err);
+  }
 
   // Generate pie chart SVG
   const generatePieChart = () => {
