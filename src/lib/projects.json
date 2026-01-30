@@ -145,10 +145,20 @@
       "id": "claude-task-dashboard",
       "name": "Claude Task Dashboard",
       "category": "ai-llm",
-      "description": "Claude AIタスク管理ダッシュボード",
+      "description": "Claude AIタスク管理ダッシュボード（旧版、project-portfolio-dashboardに統合）",
       "path": "C:/Users/wwwhi/Create/claude-task-dashboard",
       "technologies": ["Node.js", "JavaScript"],
-      "status": "active"
+      "status": "archive"
+    },
+    {
+      "id": "project-portfolio-dashboard",
+      "name": "Project Portfolio Dashboard",
+      "category": "ai-llm",
+      "description": "プロジェクト管理・Claude使用量監視統合ダッシュボード。claude-task-dashboardの機能を統合",
+      "path": "C:/Users/wwwhi/Create/project-portfolio-dashboard",
+      "technologies": ["Next.js", "TypeScript", "Tailwind CSS", "Recharts"],
+      "status": "active",
+      "launchCommand": "npm run dev"
     },
     {
       "id": "clawdbot-usage-logger",
