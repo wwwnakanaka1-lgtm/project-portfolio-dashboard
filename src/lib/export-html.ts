@@ -1,9 +1,14 @@
 import { Project, Categories } from "./types";
+import { getExchangeRate } from "./exchange-rate";
 
-// USD to JPY exchange rate
-const USD_TO_JPY = 155;
+// Fallback rate if API fails
+const FALLBACK_RATE = 150;
 
-export function exportToHTML(projects: Project[], categories: Categories): void {
+export async function exportToHTML(projects: Project[], categories: Categories): Promise<void> {
+  // Fetch current exchange rate
+  const rateInfo = await getExchangeRate();
+  const USD_TO_JPY = rateInfo.rate;
+  const rateSource = rateInfo.source === "api" ? "自動取得" : "フォールバック";
   const now = new Date();
   const dateStr = now.toLocaleDateString("ja-JP", {
     year: "numeric",
@@ -421,7 +426,7 @@ export function exportToHTML(projects: Project[], categories: Categories): void 
           </div>
         `).join('')}
       </div>
-      <div style="margin-top: 15px; font-size: 0.8rem; color: #888; text-align: right;">為替レート: $1 = ¥${USD_TO_JPY}</div>
+      <div style="margin-top: 15px; font-size: 0.8rem; color: #888; text-align: right;">為替レート: $1 = ¥${USD_TO_JPY} (${rateSource})</div>
     </div>
   </div>
 

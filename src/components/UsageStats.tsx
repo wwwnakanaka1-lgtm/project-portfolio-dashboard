@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -18,9 +18,10 @@ import {
   CostBreakdown,
   UsageSummary,
 } from "@/lib/usage-types";
+import { getExchangeRate } from "@/lib/exchange-rate";
 
-// USD to JPY exchange rate (approximate)
-const USD_TO_JPY = 155;
+// Fallback rate if API fetch hasn't completed yet
+const FALLBACK_RATE = 150;
 
 // Embedded stats data - in production, this would be loaded dynamically
 const USAGE_STATS: ClaudeUsageStats = {
@@ -98,6 +99,16 @@ function calculateCost(model: string, usage: ClaudeUsageStats["modelUsage"][stri
 }
 
 export function UsageStats() {
+  const [exchangeRate, setExchangeRate] = useState(FALLBACK_RATE);
+  const [rateSource, setRateSource] = useState<"api" | "fallback">("fallback");
+
+  useEffect(() => {
+    getExchangeRate().then((result) => {
+      setExchangeRate(result.rate);
+      setRateSource(result.source);
+    });
+  }, []);
+
   const summary: UsageSummary = useMemo(() => {
     const costByModel: CostBreakdown[] = Object.entries(USAGE_STATS.modelUsage).map(
       ([model, usage]) => calculateCost(model, usage)
@@ -118,8 +129,8 @@ export function UsageStats() {
   }, []);
 
   const formatUSD = (value: number) => `$${value.toFixed(2)}`;
-  const formatJPY = (value: number) => `¥${Math.round(value * USD_TO_JPY).toLocaleString()}`;
-  const formatBoth = (value: number) => `$${value.toFixed(2)} (¥${Math.round(value * USD_TO_JPY).toLocaleString()})`;
+  const formatJPY = (value: number) => `¥${Math.round(value * exchangeRate).toLocaleString()}`;
+  const formatBoth = (value: number) => `$${value.toFixed(2)} (¥${Math.round(value * exchangeRate).toLocaleString()})`;
   const formatTokens = (value: number) => {
     if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
     if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -238,7 +249,8 @@ export function UsageStats() {
 
       {/* Footer */}
       <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-        データソース: ~/.claude/stats-cache.json | 最終更新: {USAGE_STATS.lastComputedDate} | 為替レート: $1 = ¥{USD_TO_JPY}
+        データソース: ~/.claude/stats-cache.json | 最終更新: {USAGE_STATS.lastComputedDate} | 為替レート: $1 = ¥{exchangeRate}
+        {rateSource === "api" ? " (自動取得)" : " (フォールバック)"}
       </div>
     </div>
   );

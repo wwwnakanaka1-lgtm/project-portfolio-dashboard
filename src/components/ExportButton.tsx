@@ -38,7 +38,7 @@ export default function ExportButton({
     try {
       switch (format) {
         case "html":
-          exportToHTML(projects, categories);
+          await exportToHTML(projects, categories);
           break;
         case "csv":
           exportToCSV(projects, categories);
