@@ -94,46 +94,48 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Stats Bar */}
-      <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap gap-6">
-              <div className="flex items-center gap-2">
-                <span className="text-3xl font-bold text-blue-600">
-                  {data.projects.length}
-                </span>
-                <span className="text-gray-500">プロジェクト</span>
+      {/* Stats Bar - hide for Claude Monitor tab */}
+      {activeTab !== "claude" && (
+        <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap gap-6">
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl font-bold text-blue-600">
+                    {data.projects.length}
+                  </span>
+                  <span className="text-gray-500">プロジェクト</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl font-bold text-green-600">
+                    {data.projects.filter((p) => p.status === "active").length}
+                  </span>
+                  <span className="text-gray-500">アクティブ</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl font-bold text-purple-600">
+                    {Object.keys(data.categories).length}
+                  </span>
+                  <span className="text-gray-500">カテゴリ</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl font-bold text-orange-600">
+                    {new Set(data.projects.flatMap((p) => p.technologies)).size}
+                  </span>
+                  <span className="text-gray-500">技術</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-3xl font-bold text-green-600">
-                  {data.projects.filter((p) => p.status === "active").length}
-                </span>
-                <span className="text-gray-500">アクティブ</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-3xl font-bold text-purple-600">
-                  {Object.keys(data.categories).length}
-                </span>
-                <span className="text-gray-500">カテゴリ</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-3xl font-bold text-orange-600">
-                  {new Set(data.projects.flatMap((p) => p.technologies)).size}
-                </span>
-                <span className="text-gray-500">技術</span>
-              </div>
+              {favoritesMounted && (
+                <FavoritesFilter
+                  showFavoritesOnly={showFavoritesOnly}
+                  onToggle={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                  favoritesCount={favorites.size}
+                />
+              )}
             </div>
-            {favoritesMounted && (
-              <FavoritesFilter
-                showFavoritesOnly={showFavoritesOnly}
-                onToggle={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                favoritesCount={favorites.size}
-              />
-            )}
           </div>
         </div>
-      </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
@@ -157,7 +159,7 @@ export default function Home() {
       </div>
 
       {/* Filter Bar */}
-      {(selectedCategory || selectedTech) && (
+      {(selectedCategory || selectedTech) && activeTab !== "claude" && (
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b dark:border-gray-700">
           <div className="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2">
             <span className="text-sm text-gray-600 dark:text-gray-300">

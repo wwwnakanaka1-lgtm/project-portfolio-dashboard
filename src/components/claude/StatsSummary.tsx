@@ -19,97 +19,64 @@ export function StatsSummary({
   exchangeRate,
   rateSource,
 }: StatsSummaryProps) {
-  const formatUSD = (value: number) => `$${value.toFixed(2)}`;
-  const formatJPY = (value: number) =>
-    `¥${Math.round(value * exchangeRate).toLocaleString()}`;
+  const formatCost = (cost: number) => {
+    if (cost < 0.01) return "$0";
+    if (cost < 1) return `$${cost.toFixed(2)}`;
+    if (cost < 100) return `$${cost.toFixed(1)}`;
+    return `$${Math.round(cost)}`;
+  };
 
-  const stats = [
-    {
-      label: "今日のメッセージ",
-      value: todayMessages.toString(),
-      subValue: null,
-      gradient: "from-blue-500 to-blue-600",
-      icon: "💬",
-    },
-    {
-      label: "今日のコスト",
-      value: formatUSD(todayCost),
-      subValue: formatJPY(todayCost),
-      gradient: "from-green-500 to-green-600",
-      icon: "📊",
-    },
-    {
-      label: "今週のコスト",
-      value: formatUSD(weekCost),
-      subValue: formatJPY(weekCost),
-      gradient: "from-purple-500 to-purple-600",
-      icon: "📅",
-    },
-    {
-      label: "今月のコスト",
-      value: formatUSD(monthCost),
-      subValue: formatJPY(monthCost),
-      gradient: "from-orange-500 to-orange-600",
-      icon: "🗓️",
-      highlight: true,
-    },
-  ];
+  const formatJpy = (cost: number) => {
+    const jpy = Math.round(cost * exchangeRate);
+    if (jpy < 1000) return `¥${jpy}`;
+    return `¥${jpy.toLocaleString()}`;
+  };
 
   return (
-    <div className="space-y-4">
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, index) => (
-          <div
-            key={index}
-            className={`bg-gradient-to-br ${stat.gradient} rounded-xl p-4 text-white ${
-              stat.highlight ? "ring-2 ring-orange-300 dark:ring-orange-700" : ""
-            }`}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-lg">{stat.icon}</span>
-              <span className="text-sm opacity-80">{stat.label}</span>
-            </div>
-            <div className="text-2xl font-bold">{stat.value}</div>
-            {stat.subValue && (
-              <div className="text-sm opacity-80">{stat.subValue}</div>
-            )}
-          </div>
-        ))}
+    <div className="grid grid-cols-5 gap-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 text-center">
+        <span className="block text-2xl font-bold text-gray-900 dark:text-white">
+          {todayMessages}
+        </span>
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          今日のメッセージ
+        </span>
       </div>
-
-      {/* Last month comparison */}
-      {lastMonthCost > 0 && (
-        <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 px-2">
-          <span>
-            先月のコスト: {formatUSD(lastMonthCost)} ({formatJPY(lastMonthCost)})
-          </span>
-          <span className="flex items-center gap-1">
-            {monthCost > lastMonthCost ? (
-              <>
-                <span className="text-red-500">↑</span>
-                <span>
-                  {((monthCost / lastMonthCost - 1) * 100).toFixed(0)}% 増加
-                </span>
-              </>
-            ) : monthCost < lastMonthCost ? (
-              <>
-                <span className="text-green-500">↓</span>
-                <span>
-                  {((1 - monthCost / lastMonthCost) * 100).toFixed(0)}% 減少
-                </span>
-              </>
-            ) : (
-              <span>変化なし</span>
-            )}
-          </span>
-        </div>
-      )}
-
-      {/* Exchange rate info */}
-      <div className="text-xs text-gray-400 dark:text-gray-500 text-right">
-        為替レート: $1 = ¥{exchangeRate}{" "}
-        ({rateSource === "api" ? "自動取得" : "フォールバック"})
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 text-center">
+        <span className="block text-2xl font-bold text-gray-900 dark:text-white">
+          {formatCost(todayCost)}
+        </span>
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          今日のコスト
+        </span>
+      </div>
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 text-center">
+        <span className="block text-2xl font-bold text-gray-900 dark:text-white">
+          {formatCost(weekCost)}
+        </span>
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          今週のコスト
+        </span>
+      </div>
+      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4 text-center">
+        <span className="block text-2xl font-bold text-blue-600 dark:text-blue-400">
+          {formatCost(monthCost)}
+        </span>
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          今月のコスト
+          <br />
+          <small className="text-green-600 dark:text-green-400">{formatJpy(monthCost)}</small>
+        </span>
+      </div>
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 text-center">
+        <span className="block text-2xl font-bold text-gray-900 dark:text-white">
+          {formatCost(lastMonthCost)}
+        </span>
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          先月のコスト
+          <br />
+          <small className="text-gray-500">{formatJpy(lastMonthCost)}</small>
+        </span>
       </div>
     </div>
   );

@@ -3,6 +3,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { SessionList } from "./SessionList";
 import { StatsSummary } from "./StatsSummary";
+import { RateLimitBar } from "./RateLimitBar";
+import { ApiUsageSection } from "./ApiUsageSection";
+import { UsageHistoryTab } from "./UsageHistoryTab";
+import { ManualTasksTab } from "./ManualTasksTab";
+import { SettingsModal } from "./SettingsModal";
+import { RateLimitSyncModal } from "./RateLimitSyncModal";
+import { TitleEditModal } from "./TitleEditModal";
+import { SessionDetailModal } from "./SessionDetailModal";
+import { TaskModal } from "./TaskModal";
+import { ServerStatus } from "./ServerStatus";
 import { getExchangeRate } from "@/lib/exchange-rate";
 
 interface TokenUsage {
@@ -51,32 +61,138 @@ interface StatsData {
   totalTokens: number;
   totalSessions: number;
   totalMessages: number;
-  todayCost?: number;
-  weekCost?: number;
-  monthCost?: number;
-  lastMonthCost?: number;
-  todayMessages?: number;
+  todayCost: number;
+  weekCost: number;
+  monthCost: number;
+  lastMonthCost: number;
+  todayMessages: number;
+  dailyActivity: DailyActivity[];
+  monthlySummary: MonthlySummary[];
+}
+
+interface DailyActivity {
+  date: string;
+  messageCount: number;
+  sessionCount: number;
+  toolCallCount: number;
+  tokens: TokenUsage;
+  cost: number;
+}
+
+interface MonthlySummary {
+  month: string;
+  cost: number;
+  days: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreateTokens: number;
+}
+
+interface ConfigData {
+  hasApiKey: boolean;
+  maskedKey: string | null;
+  keyType: "admin" | "standard" | "oauth" | "unknown" | null;
+  updatedAt?: string;
+}
+
+interface RateLimitData {
+  usagePercent: number;
+  outputTokensLimit: number | null;
+  outputTokensRemaining: number | null;
+  tokensLimit: number | null;
+  tokensRemaining: number | null;
+  resetTimeStr: string;
+  source: string;
+  fetchedAt: string;
+}
+
+interface ApiUsageData {
+  today: { tokens: { input: number; output: number }; cost: number };
+  month: { tokens: { input: number; output: number }; cost: number };
+  source: string;
+  fetchedAt: string;
+}
+
+interface ManualTask {
+  id: string;
+  name: string;
+  description?: string;
+  status: "pending" | "in_progress" | "completed";
+  createdAt: string;
+  updatedAt: string;
 }
 
 const FALLBACK_RATE = 150;
-const REFRESH_INTERVAL = 10000; // 10 seconds
+const REFRESH_INTERVAL = 10000;
 
 export function ClaudeMonitor() {
+  // Data states
   const [sessionsData, setSessionsData] = useState<SessionsData | null>(null);
   const [statsData, setStatsData] = useState<StatsData | null>(null);
+  const [configData, setConfigData] = useState<ConfigData | null>(null);
+  const [rateLimitData, setRateLimitData] = useState<RateLimitData | null>(null);
+  const [apiUsageData, setApiUsageData] = useState<ApiUsageData | null>(null);
+  const [manualTasks, setManualTasks] = useState<ManualTask[]>([]);
+
+  // UI states
   const [exchangeRate, setExchangeRate] = useState(FALLBACK_RATE);
   const [rateSource, setRateSource] = useState<"api" | "fallback">("fallback");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [activeTab, setActiveTab] = useState<"claude" | "history" | "manual">("claude");
+  const [serverConnected, setServerConnected] = useState(true);
+
+  // Modal states
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showRateLimitModal, setShowRateLimitModal] = useState(false);
+  const [showTitleEditModal, setShowTitleEditModal] = useState(false);
+  const [showSessionDetailModal, setShowSessionDetailModal] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const [editingTask, setEditingTask] = useState<ManualTask | null>(null);
+
+  // Rate limit sync state (localStorage)
+  const [syncedRateLimit, setSyncedRateLimit] = useState<{
+    percent: number;
+    resetTime: Date;
+    syncedAt: Date;
+  } | null>(null);
+
+  // Custom titles (localStorage)
+  const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
+
+  // Load localStorage data
+  useEffect(() => {
+    const savedTitles = localStorage.getItem("claude-custom-titles");
+    if (savedTitles) {
+      setCustomTitles(JSON.parse(savedTitles));
+    }
+
+    const savedRateLimit = localStorage.getItem("claude-rate-limit-sync");
+    if (savedRateLimit) {
+      const parsed = JSON.parse(savedRateLimit);
+      setSyncedRateLimit({
+        percent: parsed.percent,
+        resetTime: new Date(parsed.resetTime),
+        syncedAt: new Date(parsed.syncedAt),
+      });
+    }
+
+    const savedTasks = localStorage.getItem("claude-manual-tasks");
+    if (savedTasks) {
+      setManualTasks(JSON.parse(savedTasks));
+    }
+  }, []);
 
   // Fetch data
   const fetchData = useCallback(async () => {
     try {
-      const [sessionsRes, statsRes] = await Promise.all([
+      const [sessionsRes, statsRes, configRes] = await Promise.all([
         fetch("/api/sessions"),
         fetch("/api/usage-stats"),
+        fetch("/api/config"),
       ]);
 
       if (!sessionsRes.ok) throw new Error("Failed to fetch sessions");
@@ -84,26 +200,43 @@ export function ClaudeMonitor() {
 
       const sessions = await sessionsRes.json();
       const stats = await statsRes.json();
+      const config = configRes.ok ? await configRes.json() : null;
 
       setSessionsData(sessions);
-
-      // Use pre-calculated values from API
-      setStatsData({
-        totalCost: stats.totalCost || 0,
-        totalTokens: stats.totalTokens || 0,
-        totalSessions: stats.totalSessions || 0,
-        totalMessages: stats.totalMessages || 0,
-        todayCost: stats.todayCost || 0,
-        weekCost: stats.weekCost || 0,
-        monthCost: stats.monthCost || 0,
-        lastMonthCost: stats.lastMonthCost || 0,
-        todayMessages: stats.todayMessages || 0,
-      });
+      setStatsData(stats);
+      if (config) setConfigData(config);
 
       setLastRefresh(new Date());
       setError(null);
+      setServerConnected(true);
+
+      // Fetch API-based data if key is configured
+      if (config?.hasApiKey) {
+        try {
+          const rateLimitRes = await fetch("/api/anthropic/ratelimit");
+          if (rateLimitRes.ok) {
+            const rl = await rateLimitRes.json();
+            if (!rl.error) setRateLimitData(rl);
+          }
+        } catch {
+          // Ignore rate limit fetch errors
+        }
+
+        if (config.keyType === "admin") {
+          try {
+            const usageRes = await fetch("/api/anthropic/usage");
+            if (usageRes.ok) {
+              const usage = await usageRes.json();
+              if (!usage.error) setApiUsageData(usage);
+            }
+          } catch {
+            // Ignore usage fetch errors
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
+      setServerConnected(false);
     } finally {
       setLoading(false);
     }
@@ -111,163 +244,359 @@ export function ClaudeMonitor() {
 
   // Initial load
   useEffect(() => {
-    // Fetch exchange rate
     getExchangeRate().then((result) => {
       setExchangeRate(result.rate);
       setRateSource(result.source);
     });
-
-    // Fetch data
     fetchData();
   }, [fetchData]);
 
   // Auto refresh
   useEffect(() => {
-    if (!autoRefresh) return;
-
     const interval = setInterval(fetchData, REFRESH_INTERVAL);
     return () => clearInterval(interval);
-  }, [autoRefresh, fetchData]);
+  }, [fetchData]);
 
-  // Handle visibility change
+  // Visibility change handler
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && autoRefresh) {
+      if (document.visibilityState === "visible") {
         fetchData();
       }
     };
-
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [autoRefresh, fetchData]);
+  }, [fetchData]);
+
+  // Calculate estimated rate limit if no API data
+  const getEstimatedRateLimit = () => {
+    if (syncedRateLimit) {
+      const now = new Date();
+      const messagesInPeriod = statsData?.todayMessages || 0;
+      const estimatedUsage = syncedRateLimit.percent + (messagesInPeriod * 0.3);
+
+      const resetDiff = syncedRateLimit.resetTime.getTime() - now.getTime();
+      const hours = Math.floor(resetDiff / (1000 * 60 * 60));
+      const mins = Math.floor((resetDiff % (1000 * 60 * 60)) / (1000 * 60));
+
+      return {
+        percent: Math.min(100, Math.round(estimatedUsage)),
+        resetStr: resetDiff > 0 ? `${hours}時間${mins}分後にリセット` : "リセット済み",
+        isSynced: true,
+      };
+    }
+
+    return {
+      percent: 0,
+      resetStr: "--",
+      isSynced: false,
+    };
+  };
+
+  // Handle title edit
+  const handleTitleEdit = (sessionId: string, customTitle: string) => {
+    const newTitles = { ...customTitles };
+    if (customTitle) {
+      newTitles[sessionId] = customTitle;
+    } else {
+      delete newTitles[sessionId];
+    }
+    setCustomTitles(newTitles);
+    localStorage.setItem("claude-custom-titles", JSON.stringify(newTitles));
+    setShowTitleEditModal(false);
+    setSelectedSession(null);
+  };
+
+  // Handle rate limit sync
+  const handleRateLimitSync = (percent: number, hours: number, minutes: number) => {
+    const resetTime = new Date();
+    resetTime.setHours(resetTime.getHours() + hours);
+    resetTime.setMinutes(resetTime.getMinutes() + minutes);
+
+    const syncData = {
+      percent,
+      resetTime: resetTime.toISOString(),
+      syncedAt: new Date().toISOString(),
+    };
+
+    setSyncedRateLimit({
+      percent,
+      resetTime,
+      syncedAt: new Date(),
+    });
+    localStorage.setItem("claude-rate-limit-sync", JSON.stringify(syncData));
+    setShowRateLimitModal(false);
+  };
+
+  // Handle reset rate limit
+  const handleResetRateLimit = () => {
+    setSyncedRateLimit(null);
+    localStorage.removeItem("claude-rate-limit-sync");
+    setShowRateLimitModal(false);
+  };
+
+  // Handle manual task save
+  const handleTaskSave = (task: ManualTask) => {
+    let newTasks: ManualTask[];
+    if (editingTask) {
+      newTasks = manualTasks.map((t) => (t.id === task.id ? task : t));
+    } else {
+      newTasks = [...manualTasks, task];
+    }
+    setManualTasks(newTasks);
+    localStorage.setItem("claude-manual-tasks", JSON.stringify(newTasks));
+    setShowTaskModal(false);
+    setEditingTask(null);
+  };
+
+  // Handle manual task delete
+  const handleTaskDelete = (taskId: string) => {
+    const newTasks = manualTasks.filter((t) => t.id !== taskId);
+    setManualTasks(newTasks);
+    localStorage.setItem("claude-manual-tasks", JSON.stringify(newTasks));
+    setShowTaskModal(false);
+    setEditingTask(null);
+  };
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        {/* Loading skeleton */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div
-              key={i}
-              className="h-24 bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse"
-            />
-          ))}
-        </div>
-        <div className="space-y-3">
-          {[...Array(3)].map((_, i) => (
-            <div
-              key={i}
-              className="h-32 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse"
-            />
-          ))}
-        </div>
+      <div className="space-y-4">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-32 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+        ))}
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg">
-        <div className="flex items-center gap-2">
-          <span>❌</span>
-          <span>エラー: {error}</span>
-        </div>
-        <button
-          onClick={fetchData}
-          className="mt-2 px-4 py-2 bg-red-100 dark:bg-red-900/50 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/70 transition-colors"
-        >
-          再試行
-        </button>
-      </div>
-    );
-  }
+  const estimatedLimit = getEstimatedRateLimit();
+
+  const internalTabs = [
+    { id: "claude" as const, label: "Claude Sessions" },
+    { id: "history" as const, label: "使用量履歴" },
+    { id: "manual" as const, label: "手動タスク" },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Action Buttons */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Claude Monitor
-        </h1>
-        <div className="flex items-center gap-3">
-          {/* Auto refresh toggle */}
-          <label className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={autoRefresh}
-              onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600"
-            />
-            自動更新
-          </label>
-
-          {/* Refresh button */}
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <span>最終更新: {lastRefresh ? lastRefresh.toLocaleTimeString("ja-JP") : "--"}</span>
+          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <span>自動更新: 10秒</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title="設定"
+          >
+            ⚙️ 設定
+          </button>
           <button
             onClick={fetchData}
-            className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             title="更新"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
+            🔄 更新
           </button>
-
-          {/* Last updated */}
-          {lastRefresh && (
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              最終更新: {lastRefresh.toLocaleTimeString("ja-JP")}
-            </span>
-          )}
+          <button
+            onClick={() => { setEditingTask(null); setShowTaskModal(true); }}
+            className="px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            + タスク追加
+          </button>
         </div>
       </div>
 
-      {/* Stats summary */}
+      {/* API Usage Section (if admin key) */}
+      {configData?.keyType === "admin" && apiUsageData && (
+        <ApiUsageSection
+          data={apiUsageData}
+          rateLimitData={rateLimitData}
+          exchangeRate={exchangeRate}
+        />
+      )}
+
+      {/* Rate Limit Bar */}
+      <RateLimitBar
+        apiData={rateLimitData}
+        estimatedData={estimatedLimit}
+        onSyncClick={() => setShowRateLimitModal(true)}
+      />
+
+      {/* Stats Summary */}
       {statsData && (
         <StatsSummary
-          todayCost={statsData.todayCost || 0}
-          weekCost={statsData.weekCost || 0}
-          monthCost={statsData.monthCost || 0}
-          lastMonthCost={statsData.lastMonthCost || 0}
-          todayMessages={statsData.todayMessages || 0}
+          todayCost={statsData.todayCost}
+          weekCost={statsData.weekCost}
+          monthCost={statsData.monthCost}
+          lastMonthCost={statsData.lastMonthCost}
+          todayMessages={statsData.todayMessages}
           exchangeRate={exchangeRate}
           rateSource={rateSource}
         />
       )}
 
-      {/* Session list */}
-      {sessionsData && (
-        <SessionList
-          grouped={sessionsData.grouped}
-          exchangeRate={exchangeRate}
+      {/* Internal Tabs */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="border-b border-gray-200 dark:border-gray-700">
+          <nav className="flex gap-1 p-1">
+            {internalTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  activeTab === tab.id
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <div className="p-4">
+          {/* Tab Content: Claude Sessions */}
+          {activeTab === "claude" && (
+            <>
+              {error ? (
+                <div className="text-red-500 p-4">
+                  エラー: {error}
+                  <button onClick={fetchData} className="ml-2 text-blue-500 hover:underline">再試行</button>
+                </div>
+              ) : sessionsData ? (
+                <SessionList
+                  grouped={sessionsData.grouped}
+                  exchangeRate={exchangeRate}
+                  customTitles={customTitles}
+                  onTitleEdit={(session) => {
+                    setSelectedSession(session);
+                    setShowTitleEditModal(true);
+                  }}
+                  onSessionClick={(session) => {
+                    setSelectedSession(session);
+                    setShowSessionDetailModal(true);
+                  }}
+                />
+              ) : null}
+            </>
+          )}
+
+          {/* Tab Content: Usage History */}
+          {activeTab === "history" && statsData && (
+            <UsageHistoryTab
+              dailyActivity={statsData.dailyActivity}
+              monthlySummary={statsData.monthlySummary}
+              exchangeRate={exchangeRate}
+            />
+          )}
+
+          {/* Tab Content: Manual Tasks */}
+          {activeTab === "manual" && (
+            <ManualTasksTab
+              tasks={manualTasks}
+              onTaskClick={(task) => {
+                setEditingTask(task);
+                setShowTaskModal(true);
+              }}
+              onStatusChange={(taskId, newStatus) => {
+                const newTasks = manualTasks.map((t) =>
+                  t.id === taskId ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t
+                );
+                setManualTasks(newTasks);
+                localStorage.setItem("claude-manual-tasks", JSON.stringify(newTasks));
+              }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Modals */}
+      {showSettingsModal && (
+        <SettingsModal
+          config={configData}
+          onClose={() => setShowSettingsModal(false)}
+          onSave={async (apiKey) => {
+            try {
+              const res = await fetch("/api/config", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ anthropicApiKey: apiKey }),
+              });
+              if (res.ok) {
+                const newConfig = await res.json();
+                setConfigData(newConfig);
+                fetchData();
+              }
+            } catch (err) {
+              console.error("Failed to save config:", err);
+            }
+            setShowSettingsModal(false);
+          }}
+          onDelete={async () => {
+            try {
+              await fetch("/api/config", { method: "DELETE" });
+              setConfigData({ hasApiKey: false, maskedKey: null, keyType: null });
+              setApiUsageData(null);
+              setRateLimitData(null);
+            } catch (err) {
+              console.error("Failed to delete config:", err);
+            }
+            setShowSettingsModal(false);
+          }}
         />
       )}
 
-      {/* Summary footer */}
-      {sessionsData && (
-        <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center justify-between px-2">
-          <span>
-            {sessionsData.summary.totalSessions} セッション
-            {sessionsData.summary.activeSessions > 0 && (
-              <span className="text-green-500 ml-2">
-                ({sessionsData.summary.activeSessions} アクティブ)
-              </span>
-            )}
-          </span>
-          <span>
-            総メッセージ: {sessionsData.summary.totalMessages.toLocaleString()}
-          </span>
-        </div>
+      {showRateLimitModal && (
+        <RateLimitSyncModal
+          onClose={() => setShowRateLimitModal(false)}
+          onSync={handleRateLimitSync}
+          onReset={handleResetRateLimit}
+        />
       )}
+
+      {showTitleEditModal && selectedSession && (
+        <TitleEditModal
+          session={selectedSession}
+          currentTitle={customTitles[selectedSession.id] || ""}
+          onClose={() => {
+            setShowTitleEditModal(false);
+            setSelectedSession(null);
+          }}
+          onSave={(title) => handleTitleEdit(selectedSession.id, title)}
+          onReset={() => handleTitleEdit(selectedSession.id, "")}
+        />
+      )}
+
+      {showSessionDetailModal && selectedSession && (
+        <SessionDetailModal
+          session={selectedSession}
+          customTitle={customTitles[selectedSession.id]}
+          exchangeRate={exchangeRate}
+          onClose={() => {
+            setShowSessionDetailModal(false);
+            setSelectedSession(null);
+          }}
+        />
+      )}
+
+      {showTaskModal && (
+        <TaskModal
+          task={editingTask}
+          onClose={() => {
+            setShowTaskModal(false);
+            setEditingTask(null);
+          }}
+          onSave={handleTaskSave}
+          onDelete={editingTask ? () => handleTaskDelete(editingTask.id) : undefined}
+        />
+      )}
+
+      {/* Server Status */}
+      <ServerStatus connected={serverConnected} />
     </div>
   );
 }

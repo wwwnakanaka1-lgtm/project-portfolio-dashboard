@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { SessionCard } from "./SessionCard";
+import { useState, useEffect } from "react";
 
 interface TokenUsage {
   inputTokens: number;
@@ -31,136 +30,281 @@ interface GroupedSessions {
   past: Session[];
 }
 
+interface Todo {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
 interface SessionListProps {
   grouped: GroupedSessions;
   exchangeRate: number;
-  onSessionClick?: (session: Session) => void;
+  customTitles: Record<string, string>;
+  onTitleEdit: (session: Session) => void;
+  onSessionClick: (session: Session) => void;
 }
 
-interface SessionGroupProps {
-  title: string;
-  sessions: Session[];
+interface SessionCardProps {
+  session: Session;
   exchangeRate: number;
-  defaultExpanded?: boolean;
-  accentColor: string;
-  icon: string;
-  onSessionClick?: (session: Session) => void;
+  customTitle?: string;
+  onTitleEdit: () => void;
+  onClick: () => void;
 }
 
-function SessionGroup({
-  title,
-  sessions,
-  exchangeRate,
-  defaultExpanded = true,
-  accentColor,
-  icon,
-  onSessionClick,
-}: SessionGroupProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick }: SessionCardProps) {
+  const [todos, setTodos] = useState<Todo[]>([]);
 
-  if (sessions.length === 0) {
-    return null;
-  }
+  useEffect(() => {
+    const fetchTodos = async () => {
+      try {
+        const res = await fetch(`/api/todos?sessionId=${session.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setTodos(data.todos || []);
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+    fetchTodos();
+  }, [session.id]);
+
+  const formatTime = (minutesAgo: number) => {
+    if (minutesAgo < 1) return "たった今";
+    if (minutesAgo < 60) return `${Math.round(minutesAgo)}分前`;
+    const hours = Math.floor(minutesAgo / 60);
+    if (hours < 24) return `${hours}時間前`;
+    const days = Math.floor(hours / 24);
+    return `${days}日前`;
+  };
+
+  const formatTokens = (tokens: number) => {
+    if (tokens >= 1000000) {
+      return `${(tokens / 1000000).toFixed(2)}M`;
+    }
+    if (tokens >= 1000) {
+      return `${(tokens / 1000).toFixed(1)}K`;
+    }
+    return tokens.toString();
+  };
+
+  const getTimeClass = () => {
+    if (session.status === "active") return "text-green-500 animate-pulse";
+    if (session.status === "recent") return "text-blue-500";
+    return "text-gray-500";
+  };
+
+  const getCardClass = () => {
+    if (session.status === "active") return "border-green-500 bg-green-50 dark:bg-green-900/20";
+    if (session.status === "recent") return "border-blue-500 bg-blue-50 dark:bg-blue-900/20";
+    return "border-gray-200 dark:border-gray-700";
+  };
+
+  const completedCount = todos.filter((t) => t.status === "completed").length;
+  const progressPercent = todos.length > 0 ? Math.round((completedCount / todos.length) * 100) : 0;
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "✅";
+      case "in_progress":
+        return "🔄";
+      default:
+        return "⏳";
+    }
+  };
+
+  // Calculate usage gauge
+  const maxCostForGauge = 5; // $5 as 100%
+  const usagePercent = Math.min(100, (session.estimatedCost / maxCostForGauge) * 100);
+  const getUsageColorClasses = () => {
+    if (usagePercent >= 80) return { bar: "bg-red-500", text: "text-red-500" };
+    if (usagePercent >= 50) return { bar: "bg-yellow-500", text: "text-yellow-500" };
+    return { bar: "bg-blue-500", text: "text-blue-500" };
+  };
+  const usageColors = getUsageColorClasses();
 
   return (
-    <div className="mb-6">
-      {/* Group header */}
-      <button
-        className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
-        <div className="flex items-center gap-2">
-          <span className={`text-lg ${accentColor}`}>{icon}</span>
-          <h2 className="font-semibold text-gray-700 dark:text-gray-200">
-            {title}
-          </h2>
-          <span className="px-2 py-0.5 text-xs rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-            {sessions.length}
-          </span>
-        </div>
-        <svg
-          className={`w-5 h-5 text-gray-400 transition-transform ${
-            isExpanded ? "rotate-180" : ""
-          }`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
-      </button>
+    <div
+      className={`bg-white dark:bg-gray-800 rounded-lg border ${getCardClass()} p-4 cursor-pointer hover:shadow-md transition-shadow`}
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
+          {customTitle || session.name}
+          <button
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTitleEdit();
+            }}
+            title="タイトルを編集"
+          >
+            ✏️
+          </button>
+        </span>
+        <span className={`text-sm ${getTimeClass()}`}>
+          {formatTime(session.minutesAgo)}
+        </span>
+      </div>
 
-      {/* Sessions */}
-      {isExpanded && (
-        <div className="mt-2 space-y-3">
-          {sessions.map((session) => (
-            <SessionCard
-              key={session.id}
-              session={session}
-              exchangeRate={exchangeRate}
-              onClick={() => onSessionClick?.(session)}
+      <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+        <span>💬 {session.messageCount}</span>
+        {session.tokenUsage && (
+          <span>🔤 {formatTokens(session.tokenUsage.totalTokens)}</span>
+        )}
+        {session.projectPath && (
+          <span title={session.projectPath}>📁 {session.projectPath.split(/[/\\]/).pop()}</span>
+        )}
+      </div>
+
+      {/* Token Usage Gauge */}
+      {session.tokenUsage && (
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-gray-500 dark:text-gray-400">トークン使用量</span>
+            <span className="text-xs text-green-600 dark:text-green-400">
+              ${session.estimatedCost.toFixed(4)} (¥{Math.round(session.estimatedCost * exchangeRate).toLocaleString()})
+            </span>
+          </div>
+          <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div
+              className={`h-full ${usageColors.bar} transition-all duration-300`}
+              style={{ width: `${usagePercent}%` }}
             />
-          ))}
+          </div>
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-xs text-gray-500 dark:text-gray-400">入力: {formatTokens(session.tokenUsage.inputTokens)}</span>
+            <span className={`text-xs ${usageColors.text}`}>
+              {usagePercent.toFixed(1)}%
+            </span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">出力: {formatTokens(session.tokenUsage.outputTokens)}</span>
+          </div>
+          {(session.tokenUsage.cacheReadTokens > 0 || session.tokenUsage.cacheCreationTokens > 0) && (
+            <div className="flex items-center gap-4 mt-1">
+              <span className="text-xs text-gray-400 dark:text-gray-500">キャッシュ読取: {formatTokens(session.tokenUsage.cacheReadTokens)}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">キャッシュ作成: {formatTokens(session.tokenUsage.cacheCreationTokens)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline Tasks */}
+      {todos.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">タスク進捗</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{completedCount}/{todos.length} ({progressPercent}%)</span>
+          </div>
+          <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-2">
+            <div
+              className="h-full bg-green-500 transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <div className="space-y-1">
+            {todos.slice(0, 5).map((todo, idx) => (
+              <div
+                key={idx}
+                className={`text-xs ${
+                  todo.status === "completed"
+                    ? "text-green-600 dark:text-green-400 line-through"
+                    : todo.status === "in_progress"
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-gray-600 dark:text-gray-400"
+                }`}
+              >
+                {getStatusIcon(todo.status)} {todo.content}
+              </div>
+            ))}
+            {todos.length > 5 && (
+              <div className="text-xs text-gray-500">
+                ... 他{todos.length - 5}件
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-export function SessionList({
-  grouped,
-  exchangeRate,
-  onSessionClick,
-}: SessionListProps) {
+export function SessionList({ grouped, exchangeRate, customTitles, onTitleEdit, onSessionClick }: SessionListProps) {
+  const [pastCollapsed, setPastCollapsed] = useState(true);
+
   return (
-    <div>
-      {/* Active sessions (5分以内) */}
-      <SessionGroup
-        title="アクティブ"
-        sessions={grouped.active}
-        exchangeRate={exchangeRate}
-        defaultExpanded={true}
-        accentColor="text-green-500"
-        icon="🟢"
-        onSessionClick={onSessionClick}
-      />
+    <>
+      {/* Active Sessions */}
+      <section className="mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+          アクティブ (5分以内)
+          <span className="text-sm font-normal text-gray-500">({grouped.active.length})</span>
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {grouped.active.map((session) => (
+            <SessionCard
+              key={session.id}
+              session={session}
+              exchangeRate={exchangeRate}
+              customTitle={customTitles[session.id]}
+              onTitleEdit={() => onTitleEdit(session)}
+              onClick={() => onSessionClick(session)}
+            />
+          ))}
+          {grouped.active.length === 0 && (
+            <div className="text-gray-500 dark:text-gray-400 p-4">アクティブなセッションはありません</div>
+          )}
+        </div>
+      </section>
 
-      {/* Recent sessions (1時間以内) */}
-      <SessionGroup
-        title="最近"
-        sessions={grouped.recent}
-        exchangeRate={exchangeRate}
-        defaultExpanded={true}
-        accentColor="text-orange-400"
-        icon="🟠"
-        onSessionClick={onSessionClick}
-      />
+      {/* Recent Sessions */}
+      <section className="mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+          最近 (1時間以内)
+          <span className="text-sm font-normal text-gray-500">({grouped.recent.length})</span>
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {grouped.recent.map((session) => (
+            <SessionCard
+              key={session.id}
+              session={session}
+              exchangeRate={exchangeRate}
+              customTitle={customTitles[session.id]}
+              onTitleEdit={() => onTitleEdit(session)}
+              onClick={() => onSessionClick(session)}
+            />
+          ))}
+          {grouped.recent.length === 0 && (
+            <div className="text-gray-500 dark:text-gray-400 p-4">最近のセッションはありません</div>
+          )}
+        </div>
+      </section>
 
-      {/* Past sessions */}
-      <SessionGroup
-        title="過去のセッション"
-        sessions={grouped.past}
-        exchangeRate={exchangeRate}
-        defaultExpanded={false}
-        accentColor="text-gray-400"
-        icon="⚪"
-        onSessionClick={onSessionClick}
-      />
-
-      {/* Empty state */}
-      {grouped.active.length === 0 &&
-        grouped.recent.length === 0 &&
-        grouped.past.length === 0 && (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-            <div className="text-4xl mb-4">📭</div>
-            <p>セッションが見つかりません</p>
+      {/* Past Sessions (Collapsible) */}
+      <section className="mb-6">
+        <h2
+          className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2 cursor-pointer hover:text-blue-600"
+          onClick={() => setPastCollapsed(!pastCollapsed)}
+        >
+          <span className={`transform transition-transform ${pastCollapsed ? "" : "rotate-90"}`}>▶</span>
+          過去のセッション
+          <span className="text-sm font-normal text-gray-500">({grouped.past.length})</span>
+        </h2>
+        {!pastCollapsed && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {grouped.past.map((session) => (
+              <SessionCard
+                key={session.id}
+                session={session}
+                exchangeRate={exchangeRate}
+                customTitle={customTitles[session.id]}
+                onTitleEdit={() => onTitleEdit(session)}
+                onClick={() => onSessionClick(session)}
+              />
+            ))}
           </div>
         )}
-    </div>
+      </section>
+    </>
   );
 }
