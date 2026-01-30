@@ -8,7 +8,7 @@ import { getCachedSync } from "@/lib/api-cache";
 const USAGE_STATS_CACHE_TTL = 30000;
 
 // Pricing per 1M tokens
-const MODEL_PRICING = {
+const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheCreate: number }> = {
   "claude-opus-4-5-20251101": {
     input: 15,
     output: 75,
@@ -21,7 +21,35 @@ const MODEL_PRICING = {
     cacheRead: 0.3,
     cacheCreate: 3.75,
   },
-} as const;
+  "claude-haiku-4-5-20251001": {
+    input: 0.8,
+    output: 4,
+    cacheRead: 0.08,
+    cacheCreate: 1,
+  },
+  "<synthetic>": {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheCreate: 0,
+  },
+};
+
+// Get pricing for a model (with fallback logic)
+function getPricing(model: string) {
+  if (MODEL_PRICING[model]) {
+    return MODEL_PRICING[model];
+  }
+  // Fallback based on model type
+  if (model.includes("opus")) {
+    return MODEL_PRICING["claude-opus-4-5-20251101"];
+  }
+  if (model.includes("haiku")) {
+    return MODEL_PRICING["claude-haiku-4-5-20251001"];
+  }
+  // Default to Sonnet pricing
+  return MODEL_PRICING["claude-sonnet-4-5-20250929"];
+}
 
 interface TokenUsage {
   inputTokens: number;
@@ -191,7 +219,7 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
 
   // Calculate costs for each model
   for (const [model, usage] of Object.entries(modelUsage)) {
-    const pricing = MODEL_PRICING[model as keyof typeof MODEL_PRICING] || MODEL_PRICING["claude-opus-4-5-20251101"];
+    const pricing = getPricing(model);
     usage.cost =
       (usage.inputTokens / 1e6) * pricing.input +
       (usage.outputTokens / 1e6) * pricing.output +
@@ -199,9 +227,9 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
       (usage.cacheCreateTokens / 1e6) * pricing.cacheCreate;
   }
 
-  // Calculate daily costs
+  // Calculate daily costs (use Opus pricing as default for aggregate daily costs)
   for (const day of Object.values(dailyData)) {
-    const pricing = MODEL_PRICING["claude-opus-4-5-20251101"];
+    const pricing = getPricing("claude-opus-4-5-20251101");
     day.cost =
       (day.tokens.inputTokens / 1e6) * pricing.input +
       (day.tokens.outputTokens / 1e6) * pricing.output +

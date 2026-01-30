@@ -144,13 +144,31 @@ export function UsageStats() {
         </h3>
         <div className="space-y-3">
           {modelEntries.map(([model, usage]) => {
-            const modelName = model.includes("opus") ? "Opus 4.5" : "Sonnet 4.5";
+            // Determine model name from model ID
+            let modelName: string;
+            if (model.includes("opus")) {
+              modelName = "Opus 4.5";
+            } else if (model.includes("sonnet")) {
+              modelName = "Sonnet 4.5";
+            } else if (model.includes("haiku")) {
+              modelName = "Haiku 4.5";
+            } else if (model === "<synthetic>") {
+              modelName = "Synthetic (System)";
+            } else {
+              modelName = model; // Show raw model ID for unknown models
+            }
             const percentage = (usage.cost / data.totalCost) * 100;
 
-            // Calculate individual costs
-            const pricing = model.includes("opus")
-              ? { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 }
-              : { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 };
+            // Calculate individual costs based on model type
+            let pricing: { input: number; output: number; cacheRead: number; cacheCreate: number };
+            if (model.includes("opus")) {
+              pricing = { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 };
+            } else if (model.includes("haiku")) {
+              pricing = { input: 0.8, output: 4, cacheRead: 0.08, cacheCreate: 1 };
+            } else {
+              // Sonnet pricing as default
+              pricing = { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 };
+            }
 
             const inputCost = (usage.inputTokens / 1e6) * pricing.input;
             const outputCost = (usage.outputTokens / 1e6) * pricing.output;

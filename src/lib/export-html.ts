@@ -70,12 +70,27 @@ export async function exportToHTML(projects: Project[], categories: Categories):
       const data = await response.json();
       const models = Object.entries(data.modelUsage as Record<string, { cost: number }>)
         .sort((a, b) => b[1].cost - a[1].cost)
-        .map(([model, usage]) => ({
-          name: model.includes("opus") ? "Opus 4.5" : "Sonnet 4.5",
-          cost: Math.round(usage.cost * 100) / 100,
-          costJPY: Math.round(usage.cost * USD_TO_JPY),
-          percentage: Math.round((usage.cost / data.totalCost) * 1000) / 10,
-        }));
+        .map(([model, usage]) => {
+          // Determine model name from model ID
+          let name: string;
+          if (model.includes("opus")) {
+            name = "Opus 4.5";
+          } else if (model.includes("sonnet")) {
+            name = "Sonnet 4.5";
+          } else if (model.includes("haiku")) {
+            name = "Haiku 4.5";
+          } else if (model === "<synthetic>") {
+            name = "Synthetic (System)";
+          } else {
+            name = model;
+          }
+          return {
+            name,
+            cost: Math.round(usage.cost * 100) / 100,
+            costJPY: Math.round(usage.cost * USD_TO_JPY),
+            percentage: Math.round((usage.cost / data.totalCost) * 1000) / 10,
+          };
+        });
 
       usageStats = {
         totalCost: Math.round(data.totalCost * 100) / 100,
