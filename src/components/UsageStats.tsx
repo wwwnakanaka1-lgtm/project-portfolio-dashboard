@@ -23,10 +23,10 @@ import { getExchangeRate } from "@/lib/exchange-rate";
 // Fallback rate if API fetch hasn't completed yet
 const FALLBACK_RATE = 150;
 
-// Embedded stats data - in production, this would be loaded dynamically
+// Embedded stats data - synced from ~/.claude/stats-cache.json
 const USAGE_STATS: ClaudeUsageStats = {
   version: 1,
-  lastComputedDate: "2026-01-28",
+  lastComputedDate: "2026-01-29",
   dailyActivity: [
     { date: "2025-12-23", messageCount: 477, sessionCount: 2, toolCallCount: 162 },
     { date: "2025-12-26", messageCount: 2085, sessionCount: 2, toolCallCount: 547 },
@@ -42,6 +42,7 @@ const USAGE_STATS: ClaudeUsageStats = {
     { date: "2026-01-23", messageCount: 560, sessionCount: 1, toolCallCount: 91 },
     { date: "2026-01-24", messageCount: 1473, sessionCount: 1, toolCallCount: 70 },
     { date: "2026-01-25", messageCount: 7235, sessionCount: 4, toolCallCount: 950 },
+    { date: "2026-01-29", messageCount: 71, sessionCount: 1, toolCallCount: 2 },
   ],
   dailyModelTokens: [],
   modelUsage: {
@@ -55,17 +56,17 @@ const USAGE_STATS: ClaudeUsageStats = {
       contextWindow: 0,
     },
     "claude-opus-4-5-20251101": {
-      inputTokens: 306829,
-      outputTokens: 1830527,
-      cacheReadInputTokens: 784293857,
-      cacheCreationInputTokens: 57398946,
+      inputTokens: 306889,
+      outputTokens: 1830566,
+      cacheReadInputTokens: 784428260,
+      cacheCreationInputTokens: 57426837,
       webSearchRequests: 0,
       costUSD: 0,
       contextWindow: 0,
     },
   },
-  totalSessions: 34,
-  totalMessages: 20469,
+  totalSessions: 35,
+  totalMessages: 20540,
   longestSession: {
     sessionId: "1baa2f6e-f54e-4c3e-af6d-f9cbf9ee1de2",
     duration: 163391913,
