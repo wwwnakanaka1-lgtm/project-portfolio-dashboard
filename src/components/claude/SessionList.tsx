@@ -129,11 +129,13 @@ function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick 
       className={`bg-white dark:bg-gray-800 rounded-lg border ${getCardClass()} p-4 cursor-pointer hover:shadow-md transition-shadow`}
       onClick={onClick}
     >
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
-          {customTitle || session.name}
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <div className="flex items-center gap-1 min-w-0 flex-1">
+          <span className="font-medium text-gray-900 dark:text-white truncate">
+            {customTitle || session.name}
+          </span>
           <button
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-xs"
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-xs flex-shrink-0"
             onClick={(e) => {
               e.stopPropagation();
               onTitleEdit();
@@ -142,8 +144,8 @@ function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick 
           >
             ✏️
           </button>
-        </span>
-        <span className={`text-sm ${getTimeClass()}`}>
+        </div>
+        <span className={`text-sm flex-shrink-0 ${getTimeClass()}`}>
           {formatTime(session.minutesAgo)}
         </span>
       </div>
