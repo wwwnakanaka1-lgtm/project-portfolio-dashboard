@@ -158,6 +158,7 @@ export function ClaudeMonitor() {
     percent: number;
     resetTime: Date;
     syncedAt: Date;
+    messageCountAtSync: number;
   } | null>(null);
 
   // Custom titles (localStorage)
@@ -177,6 +178,7 @@ export function ClaudeMonitor() {
         percent: parsed.percent,
         resetTime: new Date(parsed.resetTime),
         syncedAt: new Date(parsed.syncedAt),
+        messageCountAtSync: parsed.messageCountAtSync || 0,
       });
     }
 
@@ -283,8 +285,12 @@ export function ClaudeMonitor() {
         };
       }
 
-      const messagesInPeriod = statsData?.todayMessages || 0;
-      const estimatedUsage = syncedRateLimit.percent + (messagesInPeriod * 0.3);
+      // Calculate messages since sync (not total today messages)
+      const currentMessages = statsData?.todayMessages || 0;
+      const messagesSinceSync = Math.max(0, currentMessages - syncedRateLimit.messageCountAtSync);
+      // Estimate: ~0.5% per message (rough approximation)
+      const estimatedUsage = syncedRateLimit.percent + (messagesSinceSync * 0.5);
+
       const hours = Math.floor(resetDiff / (1000 * 60 * 60));
       const mins = Math.floor((resetDiff % (1000 * 60 * 60)) / (1000 * 60));
 
@@ -322,16 +328,20 @@ export function ClaudeMonitor() {
     resetTime.setHours(resetTime.getHours() + hours);
     resetTime.setMinutes(resetTime.getMinutes() + minutes);
 
+    const messageCountAtSync = statsData?.todayMessages || 0;
+
     const syncData = {
       percent,
       resetTime: resetTime.toISOString(),
       syncedAt: new Date().toISOString(),
+      messageCountAtSync,
     };
 
     setSyncedRateLimit({
       percent,
       resetTime,
       syncedAt: new Date(),
+      messageCountAtSync,
     });
     localStorage.setItem("claude-rate-limit-sync", JSON.stringify(syncData));
     setShowRateLimitModal(false);
