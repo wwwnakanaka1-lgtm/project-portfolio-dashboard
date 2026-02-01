@@ -272,16 +272,25 @@ export function ClaudeMonitor() {
   const getEstimatedRateLimit = () => {
     if (syncedRateLimit) {
       const now = new Date();
+      const resetDiff = syncedRateLimit.resetTime.getTime() - now.getTime();
+
+      // If reset time has passed, show reset state
+      if (resetDiff <= 0) {
+        return {
+          percent: 0,
+          resetStr: "リセット済み（再同期してください）",
+          isSynced: true,
+        };
+      }
+
       const messagesInPeriod = statsData?.todayMessages || 0;
       const estimatedUsage = syncedRateLimit.percent + (messagesInPeriod * 0.3);
-
-      const resetDiff = syncedRateLimit.resetTime.getTime() - now.getTime();
       const hours = Math.floor(resetDiff / (1000 * 60 * 60));
       const mins = Math.floor((resetDiff % (1000 * 60 * 60)) / (1000 * 60));
 
       return {
         percent: Math.min(100, Math.round(estimatedUsage)),
-        resetStr: resetDiff > 0 ? `${hours}時間${mins}分後にリセット` : "リセット済み",
+        resetStr: `${hours}時間${mins}分後にリセット`,
         isSynced: true,
       };
     }

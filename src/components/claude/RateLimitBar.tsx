@@ -37,7 +37,7 @@ export function RateLimitBar({ apiData, estimatedData, onSyncClick }: RateLimitB
 
   const colors = getColorClasses(percent);
 
-  const formatTokens = () => {
+  const formatTokens = (): string | null => {
     if (useApi && apiData) {
       if (apiData.outputTokensRemaining !== null) {
         return `出力: ${(apiData.outputTokensRemaining / 1000).toFixed(0)}K / ${(apiData.outputTokensLimit! / 1000).toFixed(0)}K`;
@@ -46,8 +46,11 @@ export function RateLimitBar({ apiData, estimatedData, onSyncClick }: RateLimitB
         return `トークン: ${(apiData.tokensRemaining / 1000).toFixed(0)}K / ${(apiData.tokensLimit! / 1000).toFixed(0)}K`;
       }
     }
-    return "出力: --";
+    // Don't show "--" for manual sync mode - token data is not available
+    return null;
   };
+
+  const tokenDisplay = formatTokens();
 
   return (
     <div className={`bg-white dark:bg-gray-800 rounded-lg border ${isSynced ? "border-green-500" : "border-gray-200 dark:border-gray-700"} p-4`}>
@@ -74,7 +77,9 @@ export function RateLimitBar({ apiData, estimatedData, onSyncClick }: RateLimitB
       </div>
       <div className="flex items-center justify-between mt-2">
         <span className={`text-sm font-semibold ${colors.text}`}>{percent}%</span>
-        <span className="text-xs text-gray-500 dark:text-gray-400">{formatTokens()}</span>
+        {tokenDisplay && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">{tokenDisplay}</span>
+        )}
       </div>
     </div>
   );
