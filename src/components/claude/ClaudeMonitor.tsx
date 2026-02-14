@@ -1,19 +1,24 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { SessionList } from "./SessionList";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { SessionCard } from "./SessionList";
 import { StatsSummary } from "./StatsSummary";
 import { RateLimitBar } from "./RateLimitBar";
 import { ApiUsageSection } from "./ApiUsageSection";
 import { UsageHistoryTab } from "./UsageHistoryTab";
 import { ManualTasksTab } from "./ManualTasksTab";
 import { SettingsModal } from "./SettingsModal";
-import { RateLimitSyncModal } from "./RateLimitSyncModal";
 import { TitleEditModal } from "./TitleEditModal";
 import { SessionDetailModal } from "./SessionDetailModal";
 import { TaskModal } from "./TaskModal";
 import { ServerStatus } from "./ServerStatus";
 import { getExchangeRate } from "@/lib/exchange-rate";
+import {
+  CodexMonitor,
+  CodexSessionCard,
+  type CodexSession,
+  type CodexSessionsData,
+} from "@/components/codex/CodexMonitor";
 
 interface TokenUsage {
   inputTokens: number;
@@ -114,6 +119,26 @@ interface ApiUsageData {
   fetchedAt: string;
 }
 
+interface ProviderPlanUsage {
+  provider: "claude" | "codex";
+  planName: string;
+  monthlyPriceUsd: number;
+  limitMessages: number;
+  usedMessages: number;
+  usagePercent: number;
+}
+
+interface PlanUsageData {
+  windowHours: number;
+  windowStart: string;
+  windowEnd: string;
+  resetTimeStr: string;
+  claude: ProviderPlanUsage;
+  codex: ProviderPlanUsage;
+  source: string;
+  generatedAt: string;
+}
+
 interface ManualTask {
   id: string;
   name: string;
@@ -123,16 +148,39 @@ interface ManualTask {
   updatedAt: string;
 }
 
+interface TitleTarget {
+  provider: "claude" | "codex";
+  id: string;
+  name: string;
+}
+
+type SessionBucket = "active" | "recent" | "past";
+type UnifiedSession =
+  | { provider: "claude"; session: Session }
+  | { provider: "codex"; session: CodexSession };
+
+interface PeriodCost {
+  todayCost: number;
+  weekCost: number;
+  monthCost: number;
+  lastMonthCost: number;
+  todayMessages: number;
+}
+
 const FALLBACK_RATE = 150;
 const REFRESH_INTERVAL = 10000;
+const CUSTOM_TITLES_STORAGE_KEY = "claude-custom-titles";
+const CUSTOM_TITLES_UPDATED_EVENT = "claude-custom-titles-updated";
 
 export function ClaudeMonitor() {
   // Data states
   const [sessionsData, setSessionsData] = useState<SessionsData | null>(null);
+  const [codexData, setCodexData] = useState<CodexSessionsData | null>(null);
   const [statsData, setStatsData] = useState<StatsData | null>(null);
   const [configData, setConfigData] = useState<ConfigData | null>(null);
   const [rateLimitData, setRateLimitData] = useState<RateLimitData | null>(null);
   const [apiUsageData, setApiUsageData] = useState<ApiUsageData | null>(null);
+  const [planUsageData, setPlanUsageData] = useState<PlanUsageData | null>(null);
   const [manualTasks, setManualTasks] = useState<ManualTask[]>([]);
 
   // UI states
@@ -140,46 +188,33 @@ export function ClaudeMonitor() {
   const [rateSource, setRateSource] = useState<"api" | "fallback">("fallback");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [codexError, setCodexError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [activeTab, setActiveTab] = useState<"claude" | "history" | "manual">("claude");
+  const [activeTab, setActiveTab] = useState<"claude" | "codex" | "history" | "manual">("claude");
   const [serverConnected, setServerConnected] = useState(true);
+  const [pastCollapsed, setPastCollapsed] = useState(true);
 
   // Modal states
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showRateLimitModal, setShowRateLimitModal] = useState(false);
   const [showTitleEditModal, setShowTitleEditModal] = useState(false);
   const [showSessionDetailModal, setShowSessionDetailModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const [selectedTitleTarget, setSelectedTitleTarget] = useState<TitleTarget | null>(null);
   const [editingTask, setEditingTask] = useState<ManualTask | null>(null);
-
-  // Rate limit sync state (localStorage)
-  const [syncedRateLimit, setSyncedRateLimit] = useState<{
-    percent: number;
-    resetTime: Date;
-    syncedAt: Date;
-    messageCountAtSync: number;
-  } | null>(null);
 
   // Custom titles (localStorage)
   const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
 
   // Load localStorage data
   useEffect(() => {
-    const savedTitles = localStorage.getItem("claude-custom-titles");
+    const savedTitles = localStorage.getItem(CUSTOM_TITLES_STORAGE_KEY);
     if (savedTitles) {
-      setCustomTitles(JSON.parse(savedTitles));
-    }
-
-    const savedRateLimit = localStorage.getItem("claude-rate-limit-sync");
-    if (savedRateLimit) {
-      const parsed = JSON.parse(savedRateLimit);
-      setSyncedRateLimit({
-        percent: parsed.percent,
-        resetTime: new Date(parsed.resetTime),
-        syncedAt: new Date(parsed.syncedAt),
-        messageCountAtSync: parsed.messageCountAtSync || 0,
-      });
+      try {
+        setCustomTitles(JSON.parse(savedTitles));
+      } catch {
+        setCustomTitles({});
+      }
     }
 
     const savedTasks = localStorage.getItem("claude-manual-tasks");
@@ -188,13 +223,43 @@ export function ClaudeMonitor() {
     }
   }, []);
 
+  useEffect(() => {
+    const refreshCustomTitles = () => {
+      const savedTitles = localStorage.getItem(CUSTOM_TITLES_STORAGE_KEY);
+      if (!savedTitles) {
+        setCustomTitles({});
+        return;
+      }
+      try {
+        setCustomTitles(JSON.parse(savedTitles));
+      } catch {
+        setCustomTitles({});
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === CUSTOM_TITLES_STORAGE_KEY) {
+        refreshCustomTitles();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+    };
+  }, []);
+
   // Fetch data
   const fetchData = useCallback(async () => {
     try {
-      const [sessionsRes, statsRes, configRes] = await Promise.all([
+      const [sessionsRes, statsRes, configRes, codexRes, planUsageRes] = await Promise.all([
         fetch("/api/sessions"),
         fetch("/api/usage-stats"),
         fetch("/api/config"),
+        fetch("/api/codex-sessions"),
+        fetch("/api/plan-usage"),
       ]);
 
       if (!sessionsRes.ok) throw new Error("Failed to fetch sessions");
@@ -203,6 +268,21 @@ export function ClaudeMonitor() {
       const sessions = await sessionsRes.json();
       const stats = await statsRes.json();
       const config = configRes.ok ? await configRes.json() : null;
+      if (codexRes.ok) {
+        const codex = (await codexRes.json()) as CodexSessionsData;
+        setCodexData(codex);
+        setCodexError(null);
+      } else {
+        setCodexData(null);
+        setCodexError("Failed to fetch Codex sessions");
+      }
+
+      if (planUsageRes.ok) {
+        const planUsage = (await planUsageRes.json()) as PlanUsageData;
+        setPlanUsageData(planUsage);
+      } else {
+        setPlanUsageData(null);
+      }
 
       setSessionsData(sessions);
       setStatsData(stats);
@@ -235,6 +315,9 @@ export function ClaudeMonitor() {
             // Ignore usage fetch errors
           }
         }
+      } else {
+        setRateLimitData(null);
+        setApiUsageData(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -270,88 +353,37 @@ export function ClaudeMonitor() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [fetchData]);
 
-  // Calculate estimated rate limit if no API data
-  const getEstimatedRateLimit = () => {
-    if (syncedRateLimit) {
-      const now = new Date();
-      const resetDiff = syncedRateLimit.resetTime.getTime() - now.getTime();
+  const getTitleKey = (provider: "claude" | "codex", sessionId: string) => `${provider}:${sessionId}`;
 
-      // If reset time has passed, show reset state
-      if (resetDiff <= 0) {
-        return {
-          percent: 0,
-          resetStr: "リセット済み（再同期してください）",
-          isSynced: true,
-        };
-      }
-
-      // Calculate messages since sync (not total today messages)
-      const currentMessages = statsData?.todayMessages || 0;
-      const messagesSinceSync = Math.max(0, currentMessages - syncedRateLimit.messageCountAtSync);
-      // Estimate: ~0.5% per message (rough approximation)
-      const estimatedUsage = syncedRateLimit.percent + (messagesSinceSync * 0.5);
-
-      const hours = Math.floor(resetDiff / (1000 * 60 * 60));
-      const mins = Math.floor((resetDiff % (1000 * 60 * 60)) / (1000 * 60));
-
-      return {
-        percent: Math.min(100, Math.round(estimatedUsage)),
-        resetStr: `${hours}時間${mins}分後にリセット`,
-        isSynced: true,
-      };
+  const getDisplayTitle = (provider: "claude" | "codex", sessionId: string) => {
+    const namespaced = customTitles[getTitleKey(provider, sessionId)];
+    if (namespaced) {
+      return namespaced;
     }
-
-    return {
-      percent: 0,
-      resetStr: "--",
-      isSynced: false,
-    };
+    // Backward compatibility for old Claude-only key format
+    if (provider === "claude") {
+      return customTitles[sessionId];
+    }
+    return undefined;
   };
 
   // Handle title edit
-  const handleTitleEdit = (sessionId: string, customTitle: string) => {
+  const handleTitleEdit = (provider: "claude" | "codex", sessionId: string, customTitle: string) => {
     const newTitles = { ...customTitles };
+    const key = getTitleKey(provider, sessionId);
     if (customTitle) {
-      newTitles[sessionId] = customTitle;
+      newTitles[key] = customTitle;
     } else {
-      delete newTitles[sessionId];
+      delete newTitles[key];
+      if (provider === "claude") {
+        delete newTitles[sessionId];
+      }
     }
     setCustomTitles(newTitles);
-    localStorage.setItem("claude-custom-titles", JSON.stringify(newTitles));
+    localStorage.setItem(CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(newTitles));
+    window.dispatchEvent(new Event(CUSTOM_TITLES_UPDATED_EVENT));
     setShowTitleEditModal(false);
-    setSelectedSession(null);
-  };
-
-  // Handle rate limit sync
-  const handleRateLimitSync = (percent: number, hours: number, minutes: number) => {
-    const resetTime = new Date();
-    resetTime.setHours(resetTime.getHours() + hours);
-    resetTime.setMinutes(resetTime.getMinutes() + minutes);
-
-    const messageCountAtSync = statsData?.todayMessages || 0;
-
-    const syncData = {
-      percent,
-      resetTime: resetTime.toISOString(),
-      syncedAt: new Date().toISOString(),
-      messageCountAtSync,
-    };
-
-    setSyncedRateLimit({
-      percent,
-      resetTime,
-      syncedAt: new Date(),
-      messageCountAtSync,
-    });
-    localStorage.setItem("claude-rate-limit-sync", JSON.stringify(syncData));
-    setShowRateLimitModal(false);
-  };
-
-  // Handle reset rate limit
-  const handleResetRateLimit = () => {
-    setSyncedRateLimit(null);
-    localStorage.removeItem("claude-rate-limit-sync");
-    setShowRateLimitModal(false);
+    setSelectedTitleTarget(null);
   };
 
   // Handle manual task save
@@ -377,6 +409,272 @@ export function ClaudeMonitor() {
     setEditingTask(null);
   };
 
+  const buildUnifiedSessions = (bucket: SessionBucket): UnifiedSession[] => {
+    const claudeSessions = sessionsData?.grouped[bucket] ?? [];
+    const codexSessions = codexData?.grouped[bucket] ?? [];
+
+    return [
+      ...claudeSessions.map((session) => ({ provider: "claude" as const, session })),
+      ...codexSessions.map((session) => ({ provider: "codex" as const, session })),
+    ].sort((a, b) => a.session.minutesAgo - b.session.minutesAgo);
+  };
+
+  const activeSessions = buildUnifiedSessions("active");
+  const recentSessions = buildUnifiedSessions("recent");
+  const pastSessions = buildUnifiedSessions("past");
+
+  const codexPeriod = useMemo<PeriodCost>(() => {
+    const empty: PeriodCost = {
+      todayCost: 0,
+      weekCost: 0,
+      monthCost: 0,
+      lastMonthCost: 0,
+      todayMessages: 0,
+    };
+    if (!codexData) {
+      return empty;
+    }
+
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
+
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1));
+    const weekStartStr = weekStart.toISOString().split("T")[0];
+
+    const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+    const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+    let todayCost = 0;
+    let weekCost = 0;
+    let monthCost = 0;
+    let lastMonthCost = 0;
+    let todayMessages = 0;
+
+    for (const session of codexData.sessions) {
+      const modified = new Date(session.modified);
+      if (Number.isNaN(modified.getTime())) {
+        continue;
+      }
+
+      const sessionDate = modified.toISOString().split("T")[0];
+      const sessionCost = session.estimatedCostUsd || 0;
+      const sessionMessages = session.userMessageCount + session.agentMessageCount;
+
+      if (sessionDate === todayStr) {
+        todayCost += sessionCost;
+        todayMessages += sessionMessages;
+      }
+      if (sessionDate >= weekStartStr) {
+        weekCost += sessionCost;
+      }
+      if (sessionDate >= monthStartStr) {
+        monthCost += sessionCost;
+      }
+      if (sessionDate.startsWith(lastMonthKey)) {
+        lastMonthCost += sessionCost;
+      }
+    }
+
+    return {
+      todayCost,
+      weekCost,
+      monthCost,
+      lastMonthCost,
+      todayMessages,
+    };
+  }, [codexData]);
+
+  const mergedSummary = useMemo(() => {
+    if (!statsData) {
+      return null;
+    }
+
+    const claudeCosts = {
+      today: statsData.todayCost,
+      week: statsData.weekCost,
+      month: statsData.monthCost,
+      lastMonth: statsData.lastMonthCost,
+    };
+
+    const codexCosts = {
+      today: codexPeriod.todayCost,
+      week: codexPeriod.weekCost,
+      month: codexPeriod.monthCost,
+      lastMonth: codexPeriod.lastMonthCost,
+    };
+
+    return {
+      todayCost: claudeCosts.today + codexCosts.today,
+      weekCost: claudeCosts.week + codexCosts.week,
+      monthCost: claudeCosts.month + codexCosts.month,
+      lastMonthCost: claudeCosts.lastMonth + codexCosts.lastMonth,
+      todayMessages: statsData.todayMessages + codexPeriod.todayMessages,
+      costBreakdown: {
+        today: { claude: claudeCosts.today, codex: codexCosts.today },
+        week: { claude: claudeCosts.week, codex: codexCosts.week },
+        month: { claude: claudeCosts.month, codex: codexCosts.month },
+        lastMonth: { claude: claudeCosts.lastMonth, codex: codexCosts.lastMonth },
+      },
+      messageBreakdown: {
+        claude: statsData.todayMessages,
+        codex: codexPeriod.todayMessages,
+      },
+    };
+  }, [codexPeriod, statsData]);
+
+  const mergedUsageHistory = useMemo(() => {
+    const dailyMap = new Map<string, DailyActivity>();
+
+    for (const day of statsData?.dailyActivity ?? []) {
+      const input = day.tokens.inputTokens || 0;
+      const output = day.tokens.outputTokens || 0;
+      const cacheRead = day.tokens.cacheReadTokens || 0;
+      const cacheCreate = day.tokens.cacheCreationTokens || 0;
+
+      dailyMap.set(day.date, {
+        ...day,
+        tokens: {
+          inputTokens: input,
+          outputTokens: output,
+          cacheReadTokens: cacheRead,
+          cacheCreationTokens: cacheCreate,
+          totalTokens: input + output + cacheRead + cacheCreate,
+        },
+      });
+    }
+
+    if (codexData) {
+      for (const session of codexData.sessions) {
+        const modified = new Date(session.modified);
+        if (Number.isNaN(modified.getTime())) {
+          continue;
+        }
+
+        const date = modified.toISOString().split("T")[0];
+        const current = dailyMap.get(date) ?? {
+          date,
+          messageCount: 0,
+          sessionCount: 0,
+          toolCallCount: 0,
+          tokens: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            totalTokens: 0,
+          },
+          cost: 0,
+        };
+
+        const rawInput = session.tokenUsage?.inputTokens ?? 0;
+        const cacheRead = session.tokenUsage?.cachedInputTokens ?? 0;
+        const input = Math.max(0, rawInput - cacheRead);
+        const output = session.tokenUsage?.outputTokens ?? 0;
+        const messageCount = session.userMessageCount + session.agentMessageCount;
+
+        current.messageCount += messageCount;
+        current.sessionCount += 1;
+        current.toolCallCount += session.toolCallCount;
+        current.tokens.inputTokens += input;
+        current.tokens.outputTokens += output;
+        current.tokens.cacheReadTokens += cacheRead;
+        current.tokens.totalTokens += input + output + cacheRead;
+        current.cost += session.estimatedCostUsd || 0;
+
+        dailyMap.set(date, current);
+      }
+    }
+
+    const dailyActivity = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    const monthlyMap = new Map<string, MonthlySummary>();
+    for (const day of dailyActivity) {
+      const monthKey = day.date.slice(0, 7);
+      const current = monthlyMap.get(monthKey) ?? {
+        month: monthKey,
+        cost: 0,
+        days: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+      };
+
+      current.cost += day.cost;
+      current.days += 1;
+      current.inputTokens += day.tokens.inputTokens;
+      current.outputTokens += day.tokens.outputTokens;
+      current.cacheReadTokens += day.tokens.cacheReadTokens;
+      current.cacheCreateTokens += day.tokens.cacheCreationTokens;
+
+      monthlyMap.set(monthKey, current);
+    }
+
+    const monthlySummary = Array.from(monthlyMap.values())
+      .map((month) => ({
+        ...month,
+        cost: Math.round(month.cost * 100) / 100,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
+    return {
+      dailyActivity,
+      monthlySummary,
+    };
+  }, [codexData, statsData]);
+
+  const renderUnifiedCard = (item: UnifiedSession) => {
+    const isClaude = item.provider === "claude";
+    return (
+      <div key={`${item.provider}-${item.session.id}`} className="space-y-1">
+        <span
+          className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+            isClaude
+              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+          }`}
+        >
+          {isClaude ? "Claude" : "Codex"}
+        </span>
+        {isClaude ? (
+          <SessionCard
+            session={item.session}
+            exchangeRate={exchangeRate}
+            customTitle={getDisplayTitle("claude", item.session.id)}
+            onTitleEdit={() => {
+              setSelectedTitleTarget({
+                provider: "claude",
+                id: item.session.id,
+                name: item.session.name,
+              });
+              setShowTitleEditModal(true);
+            }}
+            onClick={() => {
+              setSelectedSession(item.session);
+              setShowSessionDetailModal(true);
+            }}
+          />
+        ) : (
+          <CodexSessionCard
+            session={item.session}
+            exchangeRate={exchangeRate}
+            customTitle={getDisplayTitle("codex", item.session.id)}
+            onTitleEdit={() => {
+              setSelectedTitleTarget({
+                provider: "codex",
+                id: item.session.id,
+                name: item.session.name,
+              });
+              setShowTitleEditModal(true);
+            }}
+          />
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -387,12 +685,11 @@ export function ClaudeMonitor() {
     );
   }
 
-  const estimatedLimit = getEstimatedRateLimit();
-
   const internalTabs = [
-    { id: "claude" as const, label: "Claude Sessions" },
-    { id: "history" as const, label: "使用量履歴" },
-    { id: "manual" as const, label: "手動タスク" },
+    { id: "claude" as const, label: "All Sessions" },
+    { id: "codex" as const, label: "Codex Sessions" },
+    { id: "history" as const, label: "Usage History" },
+    { id: "manual" as const, label: "Manual Tasks" },
   ];
 
   return (
@@ -400,30 +697,30 @@ export function ClaudeMonitor() {
       {/* Action Buttons */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <span>最終更新: {lastRefresh ? lastRefresh.toLocaleTimeString("ja-JP") : "--"}</span>
+          <span>Last refresh: {lastRefresh ? lastRefresh.toLocaleTimeString("ja-JP") : "--"}</span>
           <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span>自動更新: 10秒</span>
+          <span>Auto refresh: 10s</span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowSettingsModal(true)}
             className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="設定"
+            title="Settings"
           >
-            ⚙️ 設定
+            Settings
           </button>
           <button
             onClick={fetchData}
             className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="更新"
+            title="Refresh"
           >
-            🔄 更新
+            Refresh
           </button>
           <button
             onClick={() => { setEditingTask(null); setShowTaskModal(true); }}
             className="px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
           >
-            + タスク追加
+            + Add Task
           </button>
         </div>
       </div>
@@ -439,21 +736,22 @@ export function ClaudeMonitor() {
 
       {/* Rate Limit Bar */}
       <RateLimitBar
+        planData={planUsageData}
         apiData={rateLimitData}
-        estimatedData={estimatedLimit}
-        onSyncClick={() => setShowRateLimitModal(true)}
       />
 
       {/* Stats Summary */}
-      {statsData && (
+      {mergedSummary && (
         <StatsSummary
-          todayCost={statsData.todayCost}
-          weekCost={statsData.weekCost}
-          monthCost={statsData.monthCost}
-          lastMonthCost={statsData.lastMonthCost}
-          todayMessages={statsData.todayMessages}
+          todayCost={mergedSummary.todayCost}
+          weekCost={mergedSummary.weekCost}
+          monthCost={mergedSummary.monthCost}
+          lastMonthCost={mergedSummary.lastMonthCost}
+          todayMessages={mergedSummary.todayMessages}
           exchangeRate={exchangeRate}
           rateSource={rateSource}
+          costBreakdown={mergedSummary.costBreakdown}
+          messageBreakdown={mergedSummary.messageBreakdown}
         />
       )}
 
@@ -483,32 +781,84 @@ export function ClaudeMonitor() {
             <>
               {error ? (
                 <div className="text-red-500 p-4">
-                  エラー: {error}
-                  <button onClick={fetchData} className="ml-2 text-blue-500 hover:underline">再試行</button>
+                  Error: {error}
+                  <button onClick={fetchData} className="ml-2 text-blue-500 hover:underline">Retry</button>
                 </div>
               ) : sessionsData ? (
-                <SessionList
-                  grouped={sessionsData.grouped}
-                  exchangeRate={exchangeRate}
-                  customTitles={customTitles}
-                  onTitleEdit={(session) => {
-                    setSelectedSession(session);
-                    setShowTitleEditModal(true);
-                  }}
-                  onSessionClick={(session) => {
-                    setSelectedSession(session);
-                    setShowSessionDetailModal(true);
-                  }}
-                />
+                <div className="space-y-6">
+                  {codexError && (
+                    <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-200">
+                      Codex sessions load warning: {codexError}
+                    </div>
+                  )}
+
+                  <section>
+                    <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+                      Active (5 min)
+                      <span className="text-sm font-normal text-gray-500">({activeSessions.length})</span>
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Claude {sessionsData.grouped.active.length} / Codex {codexData?.grouped.active.length ?? 0}
+                    </p>
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      {activeSessions.map(renderUnifiedCard)}
+                      {activeSessions.length === 0 && (
+                        <div className="p-4 text-gray-500 dark:text-gray-400">No active sessions</div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section>
+                    <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+                      Recent (1 hour)
+                      <span className="text-sm font-normal text-gray-500">({recentSessions.length})</span>
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Claude {sessionsData.grouped.recent.length} / Codex {codexData?.grouped.recent.length ?? 0}
+                    </p>
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      {recentSessions.map(renderUnifiedCard)}
+                      {recentSessions.length === 0 && (
+                        <div className="p-4 text-gray-500 dark:text-gray-400">No recent sessions</div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section>
+                    <button
+                      type="button"
+                      className="mb-1 flex items-center gap-2 text-lg font-semibold text-gray-900 hover:text-blue-600 dark:text-white"
+                      onClick={() => setPastCollapsed(!pastCollapsed)}
+                    >
+                      <span className={`transform transition-transform ${pastCollapsed ? "" : "rotate-90"}`}>{">"}</span>
+                      Past Sessions
+                      <span className="text-sm font-normal text-gray-500">({pastSessions.length})</span>
+                    </button>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Claude {sessionsData.grouped.past.length} / Codex {codexData?.grouped.past.length ?? 0}
+                    </p>
+                    {!pastCollapsed && (
+                      <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {pastSessions.map(renderUnifiedCard)}
+                        {pastSessions.length === 0 && (
+                          <div className="p-4 text-gray-500 dark:text-gray-400">No past sessions</div>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                </div>
               ) : null}
             </>
           )}
 
+          {/* Tab Content: Codex Sessions */}
+          {activeTab === "codex" && <CodexMonitor />}
+
           {/* Tab Content: Usage History */}
-          {activeTab === "history" && statsData && (
+          {activeTab === "history" && mergedUsageHistory && (
             <UsageHistoryTab
-              dailyActivity={statsData.dailyActivity}
-              monthlySummary={statsData.monthlySummary}
+              dailyActivity={mergedUsageHistory.dailyActivity}
+              monthlySummary={mergedUsageHistory.monthlySummary}
               exchangeRate={exchangeRate}
             />
           )}
@@ -569,31 +919,31 @@ export function ClaudeMonitor() {
         />
       )}
 
-      {showRateLimitModal && (
-        <RateLimitSyncModal
-          onClose={() => setShowRateLimitModal(false)}
-          onSync={handleRateLimitSync}
-          onReset={handleResetRateLimit}
-        />
-      )}
-
-      {showTitleEditModal && selectedSession && (
+      {showTitleEditModal && selectedTitleTarget && (
         <TitleEditModal
-          session={selectedSession}
-          currentTitle={customTitles[selectedSession.id] || ""}
+          session={{
+            id: selectedTitleTarget.id,
+            name: selectedTitleTarget.name,
+            messageCount: 0,
+            created: "",
+            modified: "",
+            status: "past",
+            minutesAgo: 0,
+          }}
+          currentTitle={getDisplayTitle(selectedTitleTarget.provider, selectedTitleTarget.id) || ""}
           onClose={() => {
             setShowTitleEditModal(false);
-            setSelectedSession(null);
+            setSelectedTitleTarget(null);
           }}
-          onSave={(title) => handleTitleEdit(selectedSession.id, title)}
-          onReset={() => handleTitleEdit(selectedSession.id, "")}
+          onSave={(title) => handleTitleEdit(selectedTitleTarget.provider, selectedTitleTarget.id, title)}
+          onReset={() => handleTitleEdit(selectedTitleTarget.provider, selectedTitleTarget.id, "")}
         />
       )}
 
       {showSessionDetailModal && selectedSession && (
         <SessionDetailModal
           session={selectedSession}
-          customTitle={customTitles[selectedSession.id]}
+          customTitle={getDisplayTitle("claude", selectedSession.id)}
           exchangeRate={exchangeRate}
           onClose={() => {
             setShowSessionDetailModal(false);
@@ -619,3 +969,4 @@ export function ClaudeMonitor() {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useMemo } from "react";
 import { CategoryChart } from "@/components/CategoryChart";
@@ -25,12 +25,10 @@ export default function Home() {
   const [selectedTech, setSelectedTech] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [, setCommandPaletteOpen] = useState(false);
 
-  // Favorites hook
-  const { favorites, toggleFavorite, isFavorite, mounted: favoritesMounted } = useFavorites();
+  const { favorites, toggleFavorite, mounted: favoritesMounted } = useFavorites();
 
-  // Filter projects based on favorites if needed
   const filteredByFavorites = useMemo(() => {
     if (!showFavoritesOnly) return data.projects;
     return data.projects.filter((p) => favorites.has(p.id));
@@ -56,53 +54,42 @@ export default function Home() {
   };
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "claude", label: "Claude Monitor" },
-    { id: "overview", label: "概要" },
-    { id: "graph", label: "関係性グラフ" },
-    { id: "usage", label: "使用量・コスト" },
+    { id: "claude", label: "Sessions" },
+    { id: "overview", label: "Overview" },
+    { id: "graph", label: "Graph" },
+    { id: "usage", label: "Usage & Cost" },
   ];
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      {/* Command Palette */}
       <CommandPalette
         projects={data.projects}
         categories={data.categories}
         onSelectProject={handleProjectClick}
       />
 
-      {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-start">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
               Project Portfolio Dashboard
             </h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">
-              C:\Users\wwwhi\Create 内のプロジェクト一覧と関係性
-            </p>
           </div>
           <div className="flex items-center gap-3">
             <SearchTrigger onClick={() => setCommandPaletteOpen(true)} />
             <ThemeToggle />
-            <ExportButton
-              projects={data.projects}
-              categories={data.categories}
-            />
+            <ExportButton projects={data.projects} categories={data.categories} />
           </div>
         </div>
       </header>
 
-      {/* Stats Bar - hide for Claude Monitor tab */}
       {activeTab !== "claude" && (
         <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap gap-6">
                 <div className="flex items-center gap-2">
-                  <span className="text-3xl font-bold text-blue-600">
-                    {data.projects.length}
-                  </span>
+                  <span className="text-3xl font-bold text-blue-600">{data.projects.length}</span>
                   <span className="text-gray-500">プロジェクト</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -112,9 +99,7 @@ export default function Home() {
                   <span className="text-gray-500">アクティブ</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-3xl font-bold text-purple-600">
-                    {Object.keys(data.categories).length}
-                  </span>
+                  <span className="text-3xl font-bold text-purple-600">{Object.keys(data.categories).length}</span>
                   <span className="text-gray-500">カテゴリ</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -136,7 +121,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Tab Navigation */}
       <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4">
           <nav className="flex gap-1">
@@ -157,19 +141,14 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Filter Bar */}
       {(selectedCategory || selectedTech) && activeTab !== "claude" && (
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b dark:border-gray-700">
           <div className="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2">
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              フィルター:
-            </span>
+            <span className="text-sm text-gray-600 dark:text-gray-300">フィルター:</span>
             {selectedCategory && (
               <span
                 className="px-2 py-1 rounded text-xs text-white flex items-center gap-1"
-                style={{
-                  backgroundColor: data.categories[selectedCategory]?.color,
-                }}
+                style={{ backgroundColor: data.categories[selectedCategory]?.color }}
               >
                 {data.categories[selectedCategory]?.name}
                 <button
@@ -201,7 +180,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main Content */}
       <main id="main-content" className="max-w-7xl mx-auto px-4 py-6">
         {activeTab === "claude" && <ClaudeMonitor />}
 
@@ -212,10 +190,7 @@ export default function Home() {
               categories={data.categories}
               onCategoryClick={handleCategoryClick}
             />
-            <TechChart
-              projects={filteredByFavorites}
-              onTechClick={handleTechClick}
-            />
+            <TechChart projects={filteredByFavorites} onTechClick={handleTechClick} />
             <ProjectTable
               projects={filteredByFavorites}
               categories={data.categories}
@@ -239,14 +214,12 @@ export default function Home() {
         {activeTab === "usage" && <UsageStats />}
       </main>
 
-      {/* Detail Panel Modal */}
       <DetailPanel
         project={selectedProject}
         categories={data.categories}
         onClose={() => setSelectedProject(null)}
       />
 
-      {/* Footer */}
       <footer className="bg-white dark:bg-gray-800 border-t dark:border-gray-700 mt-8">
         <div className="max-w-7xl mx-auto px-4 py-4 text-center text-sm text-gray-500">
           Project Portfolio Dashboard | Generated: 2026-01-25

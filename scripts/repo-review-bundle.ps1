@@ -1,5 +1,5 @@
 ﻿param(
-  [string]$OutPath = \"\",
+  [string]$OutPath = "",
   [int]$MaxFileSizeKb = 200,
   [int]$MaxTotalKb = 800,
   [switch]$IncludeDocs
