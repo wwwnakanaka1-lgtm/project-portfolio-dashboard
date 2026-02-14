@@ -3,9 +3,15 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
+import {
+  parsePlanProgress,
+  walkJsonlFiles,
+  type PlanProgress,
+} from "@/lib/codex-session-utils";
 
 const SESSIONS_CACHE_TTL = 5000;
 const DEFAULT_MODEL = "gpt-5.3-codex";
+const MAX_SESSION_SCAN_FILES = Number(process.env.CODEX_SESSION_SCAN_MAX_FILES ?? 2000);
 
 interface PricingPerMillion {
   input: number;
@@ -25,22 +31,6 @@ const MODEL_PRICING: Record<string, PricingPerMillion> = {
 };
 
 type SessionStatus = "active" | "recent" | "past";
-type PlanStepStatus = "pending" | "in_progress" | "completed" | "unknown";
-
-interface PlanStep {
-  step: string;
-  status: PlanStepStatus;
-}
-
-interface PlanProgress {
-  total: number;
-  completed: number;
-  inProgress: number;
-  pending: number;
-  percent: number;
-  lastUpdated: string;
-  steps: PlanStep[];
-}
 
 interface TokenUsage {
   inputTokens: number;
@@ -77,27 +67,6 @@ interface CodexSession {
 function getCodexSessionsRoot(): string {
   const homeDir = os.homedir();
   return path.join(homeDir, ".codex", "sessions");
-}
-
-function walkJsonlFiles(dir: string): string[] {
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-
-  const files: string[] = [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...walkJsonlFiles(fullPath));
-      continue;
-    }
-    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-      files.push(fullPath);
-    }
-  }
-
-  return files;
 }
 
 function safeJsonParse<T>(value: string): T | null {
@@ -140,42 +109,6 @@ function pickRequestText(rawMessage: string): string {
   }
 
   return "Untitled session";
-}
-
-function normalizePlanStatus(status: unknown): PlanStepStatus {
-  if (status === "pending" || status === "in_progress" || status === "completed") {
-    return status;
-  }
-  return "unknown";
-}
-
-function parsePlanProgress(argsRaw: string, timestamp: string): PlanProgress | null {
-  const args = safeJsonParse<{ plan?: Array<{ step?: unknown; status?: unknown }> }>(argsRaw);
-  const rawPlan = args?.plan;
-  if (!rawPlan || rawPlan.length === 0) {
-    return null;
-  }
-
-  const steps: PlanStep[] = rawPlan.map((item) => ({
-    step: typeof item.step === "string" ? compactText(item.step, 180) : "Untitled step",
-    status: normalizePlanStatus(item.status),
-  }));
-
-  const completed = steps.filter((step) => step.status === "completed").length;
-  const inProgress = steps.filter((step) => step.status === "in_progress").length;
-  const pending = steps.filter((step) => step.status === "pending" || step.status === "unknown").length;
-  const total = steps.length;
-  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-  return {
-    total,
-    completed,
-    inProgress,
-    pending,
-    percent,
-    lastUpdated: timestamp,
-    steps,
-  };
 }
 
 function parseTokenUsage(totalTokenUsage: unknown): TokenUsage | null {
@@ -402,17 +335,38 @@ function parseSessionFile(filePath: string): CodexSession | null {
 function readCodexSessions(): CodexSession[] {
   return getCachedSync("codex-sessions-list", SESSIONS_CACHE_TTL, () => {
     const root = getCodexSessionsRoot();
-    const files = walkJsonlFiles(root);
-    const sessions = files
-      .map((filePath) => {
-        try {
-          return parseSessionFile(filePath);
-        } catch {
-          return null;
+    const walkResult = walkJsonlFiles(root, { maxFiles: MAX_SESSION_SCAN_FILES });
+    const sessions: CodexSession[] = [];
+    let failedFiles = 0;
+
+    for (const filePath of walkResult.files) {
+      try {
+        const session = parseSessionFile(filePath);
+        if (session) {
+          sessions.push(session);
         }
-      })
-      .filter((session): session is CodexSession => session !== null)
-      .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+      } catch (error) {
+        failedFiles += 1;
+        console.warn("[codex-sessions] Failed to parse session file", {
+          filePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (walkResult.reachedLimit) {
+      console.warn("[codex-sessions] Scan limit reached", {
+        maxFiles: MAX_SESSION_SCAN_FILES,
+      });
+    }
+
+    if (failedFiles > 0) {
+      console.warn("[codex-sessions] Session parse failures detected", {
+        failedFiles,
+      });
+    }
+
+    sessions.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
 
     return sessions;
   });
