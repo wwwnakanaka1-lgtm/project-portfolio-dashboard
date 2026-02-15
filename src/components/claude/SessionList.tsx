@@ -49,9 +49,17 @@ interface SessionCardProps {
   customTitle?: string;
   onTitleEdit: () => void;
   onClick: () => void;
+  borderClassName?: string;
 }
 
-export function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick }: SessionCardProps) {
+export function SessionCard({
+  session,
+  exchangeRate,
+  customTitle,
+  onTitleEdit,
+  onClick,
+  borderClassName,
+}: SessionCardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
 
   useEffect(() => {
@@ -125,7 +133,7 @@ export function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, o
 
   return (
     <div
-      className={`bg-white dark:bg-gray-800 rounded-lg border ${getCardClass()} p-4 cursor-pointer hover:shadow-md transition-shadow`}
+      className={`bg-white dark:bg-gray-800 rounded-lg border ${getCardClass()} ${borderClassName ?? ""} p-4 cursor-pointer hover:shadow-md transition-shadow`}
       onClick={onClick}
     >
       <div className="flex items-center justify-between mb-2 gap-2">

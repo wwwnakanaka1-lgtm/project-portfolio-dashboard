@@ -3,6 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { getExchangeRate } from "@/lib/exchange-rate";
 import { TitleEditModal } from "@/components/claude/TitleEditModal";
+import {
+  CLAUDE_CUSTOM_TITLES_STORAGE_KEY,
+  CLAUDE_CUSTOM_TITLES_UPDATED_EVENT,
+  CODEX_CUSTOM_TITLES_STORAGE_KEY,
+  CODEX_CUSTOM_TITLES_UPDATED_EVENT,
+  hydrateTitleMaps,
+  parseTitleMap,
+} from "@/lib/custom-title-storage";
 
 export type SessionStatus = "active" | "recent" | "past";
 type PlanStepStatus = "pending" | "in_progress" | "completed" | "unknown";
@@ -87,8 +95,6 @@ export interface CodexSessionsData {
 
 const REFRESH_INTERVAL = 10000;
 const FALLBACK_RATE = 150;
-const CUSTOM_TITLES_STORAGE_KEY = "claude-custom-titles";
-const CUSTOM_TITLES_UPDATED_EVENT = "claude-custom-titles-updated";
 
 function formatRelativeTime(minutesAgo: number): string {
   if (minutesAgo < 1) return "たった今";
@@ -297,17 +303,50 @@ export function CodexMonitor() {
   const getTitleKey = (sessionId: string) => `codex:${sessionId}`;
   const getCustomTitle = (sessionId: string) => customTitles[getTitleKey(sessionId)];
 
-  const handleTitleEdit = (sessionId: string, customTitle: string) => {
-    const next = { ...customTitles };
-    const key = getTitleKey(sessionId);
-    if (customTitle) {
-      next[key] = customTitle;
-    } else {
-      delete next[key];
+  const loadAndHydrateTitles = useCallback((options?: { dispatchEvent?: boolean }) => {
+    const rawClaudeTitles = parseTitleMap(localStorage.getItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY));
+    const rawCodexTitles = parseTitleMap(localStorage.getItem(CODEX_CUSTOM_TITLES_STORAGE_KEY));
+    const hydrated = hydrateTitleMaps(rawClaudeTitles, rawCodexTitles);
+
+    if (hydrated.claudeChanged) {
+      localStorage.setItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydrated.claudeTitles));
+      if (options?.dispatchEvent) {
+        window.dispatchEvent(new Event(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT));
+      }
     }
-    setCustomTitles(next);
-    localStorage.setItem(CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event(CUSTOM_TITLES_UPDATED_EVENT));
+    if (hydrated.codexChanged) {
+      localStorage.setItem(CODEX_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydrated.codexTitles));
+      if (options?.dispatchEvent) {
+        window.dispatchEvent(new Event(CODEX_CUSTOM_TITLES_UPDATED_EVENT));
+      }
+    }
+
+    setCustomTitles(hydrated.codexTitles);
+    return hydrated;
+  }, []);
+
+  const handleTitleEdit = (sessionId: string, customTitle: string) => {
+    const key = getTitleKey(sessionId);
+    const nextCodexTitles = { ...customTitles };
+    if (customTitle) {
+      nextCodexTitles[key] = customTitle;
+    } else {
+      delete nextCodexTitles[key];
+    }
+
+    const rawClaudeTitles = parseTitleMap(localStorage.getItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY));
+    if (customTitle) {
+      rawClaudeTitles[key] = customTitle;
+    } else {
+      delete rawClaudeTitles[key];
+    }
+
+    const hydrated = hydrateTitleMaps(rawClaudeTitles, nextCodexTitles);
+    setCustomTitles(hydrated.codexTitles);
+    localStorage.setItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydrated.claudeTitles));
+    localStorage.setItem(CODEX_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydrated.codexTitles));
+    window.dispatchEvent(new Event(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT));
+    window.dispatchEvent(new Event(CODEX_CUSTOM_TITLES_UPDATED_EVENT));
     setShowTitleEditModal(false);
     setEditingSession(null);
   };
@@ -329,49 +368,36 @@ export function CodexMonitor() {
   }, []);
 
   useEffect(() => {
-    const savedTitles = localStorage.getItem(CUSTOM_TITLES_STORAGE_KEY);
-    if (savedTitles) {
-      try {
-        setCustomTitles(JSON.parse(savedTitles));
-      } catch {
-        // Ignore invalid localStorage value
-      }
-    }
+    loadAndHydrateTitles();
 
     getExchangeRate().then((result) => {
       setExchangeRate(result.rate);
       setRateSource(result.source);
     });
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, loadAndHydrateTitles]);
 
   useEffect(() => {
-    const refreshCustomTitles = () => {
-      const savedTitles = localStorage.getItem(CUSTOM_TITLES_STORAGE_KEY);
-      if (!savedTitles) {
-        setCustomTitles({});
-        return;
-      }
-      try {
-        setCustomTitles(JSON.parse(savedTitles));
-      } catch {
-        setCustomTitles({});
-      }
-    };
+    const refreshCustomTitles = () => loadAndHydrateTitles();
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === CUSTOM_TITLES_STORAGE_KEY) {
+      if (
+        event.key === CLAUDE_CUSTOM_TITLES_STORAGE_KEY ||
+        event.key === CODEX_CUSTOM_TITLES_STORAGE_KEY
+      ) {
         refreshCustomTitles();
       }
     };
 
     window.addEventListener("storage", handleStorage);
-    window.addEventListener(CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+    window.addEventListener(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+    window.addEventListener(CODEX_CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
     return () => {
       window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+      window.removeEventListener(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+      window.removeEventListener(CODEX_CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
     };
-  }, []);
+  }, [loadAndHydrateTitles]);
 
   useEffect(() => {
     const interval = setInterval(fetchData, REFRESH_INTERVAL);

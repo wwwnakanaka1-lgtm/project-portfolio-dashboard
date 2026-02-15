@@ -3,16 +3,26 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
+import {
+  buildRollingWindowTimeline,
+  calculateRollingWindowFromMessageTimestamps,
+  type RollingWindowUsage,
+} from "@/lib/rolling-window";
 
 const PLAN_USAGE_CACHE_TTL = 10000;
 const WINDOW_HOURS = 5;
 const WINDOW_MS = WINDOW_HOURS * 60 * 60 * 1000;
+const CODEX_RATE_LIMIT_SCAN_FILES = Number(process.env.CODEX_RATE_LIMIT_SCAN_FILES ?? 30);
 
 const CLAUDE_LIMIT_MESSAGES_PER_WINDOW = Number(process.env.CLAUDE_MAX_X5_MESSAGES_PER_5H ?? 225);
 const CODEX_LIMIT_MESSAGES_PER_WINDOW = Number(process.env.CODEX_PLUS_MESSAGES_PER_5H ?? 200);
 
 const CLAUDE_MONTHLY_PLAN_USD = Number(process.env.CLAUDE_MAX_X5_MONTHLY_USD ?? 100);
 const CODEX_MONTHLY_PLAN_USD = Number(process.env.CODEX_PLUS_MONTHLY_USD ?? 20);
+const WAITING_NEXT_MESSAGE_RESET_STR = "Waiting for next message";
+const DRIFT_ALERT_THRESHOLD_PERCENT = 10;
+
+type UsageConfidence = "high" | "medium" | "low";
 
 interface ProviderUsage {
   provider: "claude" | "codex";
@@ -21,6 +31,23 @@ interface ProviderUsage {
   limitMessages: number;
   usedMessages: number;
   usagePercent: number;
+  resetTimeStr: string;
+  usageSource: "message-estimate" | "codex-rate-limit";
+  confidence: UsageConfidence;
+  estimateUsagePercent: number;
+  rateLimitUsagePercent: number | null;
+  deltaPercent: number | null;
+  driftAlert: boolean;
+  firstMessageAfterReset: string | null;
+}
+
+interface ResetTimelineEntry {
+  provider: "claude" | "codex";
+  windowStart: string;
+  windowEnd: string;
+  firstMessageAfterReset: string;
+  messageCount: number;
+  active: boolean;
 }
 
 interface PlanUsageResult {
@@ -30,8 +57,16 @@ interface PlanUsageResult {
   resetTimeStr: string;
   claude: ProviderUsage;
   codex: ProviderUsage;
+  resetTimeline: ResetTimelineEntry[];
   source: string;
   generatedAt: string;
+}
+
+interface CodexRateLimitSnapshot {
+  usedPercent: number;
+  windowMinutes: number;
+  resetsAtSec: number;
+  observedAtMs: number;
 }
 
 function formatResetTime(resetMs: number): string {
@@ -136,13 +171,117 @@ function walkJsonlFiles(dir: string): string[] {
   return files;
 }
 
-function countMessagesFromJsonl(
+function parseCodexRateLimitEntry(entry: Record<string, unknown>): CodexRateLimitSnapshot | null {
+  if (entry.type !== "event_msg") {
+    return null;
+  }
+
+  const payload = entry.payload as Record<string, unknown> | undefined;
+  if (!payload || payload.type !== "token_count") {
+    return null;
+  }
+
+  const rateLimits = payload.rate_limits as Record<string, unknown> | undefined;
+  if (!rateLimits) {
+    return null;
+  }
+
+  const primary = rateLimits.primary as Record<string, unknown> | undefined;
+  if (!primary) {
+    return null;
+  }
+
+  const usedPercent = typeof primary.used_percent === "number" ? primary.used_percent : null;
+  const windowMinutes = typeof primary.window_minutes === "number" ? primary.window_minutes : null;
+  const resetsAtSec = typeof primary.resets_at === "number" ? primary.resets_at : null;
+  const observedAtMs = parseTimestamp(entry.timestamp);
+
+  if (
+    usedPercent === null ||
+    windowMinutes === null ||
+    resetsAtSec === null ||
+    observedAtMs === null ||
+    Number.isNaN(usedPercent) ||
+    Number.isNaN(windowMinutes) ||
+    Number.isNaN(resetsAtSec)
+  ) {
+    return null;
+  }
+
+  // Keep only the 5-hour window.
+  if (windowMinutes !== 300) {
+    return null;
+  }
+
+  return {
+    usedPercent,
+    windowMinutes,
+    resetsAtSec,
+    observedAtMs,
+  };
+}
+
+function findLatestCodexRateLimit(): CodexRateLimitSnapshot | null {
+  const codexRoot = path.join(os.homedir(), ".codex", "sessions");
+  const allFiles = walkJsonlFiles(codexRoot);
+
+  if (allFiles.length === 0) {
+    return null;
+  }
+
+  const filesWithMtime: Array<{ filePath: string; mtimeMs: number }> = [];
+  for (const filePath of allFiles) {
+    try {
+      filesWithMtime.push({ filePath, mtimeMs: fs.statSync(filePath).mtimeMs });
+    } catch {
+      // Ignore transient file errors and continue.
+    }
+  }
+
+  const recentFiles = filesWithMtime
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, CODEX_RATE_LIMIT_SCAN_FILES)
+    .map((item) => item.filePath);
+
+  let latest: CodexRateLimitSnapshot | null = null;
+
+  for (const filePath of recentFiles) {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    const lines = content.split(/\r?\n/).filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      let entry: Record<string, unknown>;
+      try {
+        entry = JSON.parse(lines[i]) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+
+      const parsed = parseCodexRateLimitEntry(entry);
+      if (!parsed) {
+        continue;
+      }
+
+      if (!latest || parsed.observedAtMs > latest.observedAtMs) {
+        latest = parsed;
+      }
+      break;
+    }
+  }
+
+  return latest;
+}
+
+function collectMessageTimestampsFromJsonl(
   files: string[],
-  windowStartMs: number,
-  windowEndMs: number,
   predicate: (entry: Record<string, unknown>) => boolean
-): number {
-  let count = 0;
+): number[] {
+  const timestamps: number[] = [];
 
   for (const filePath of files) {
     let content: string;
@@ -161,39 +300,35 @@ function countMessagesFromJsonl(
         continue;
       }
 
-      const timestamp = parseTimestamp(entry.timestamp);
-      if (timestamp === null || timestamp < windowStartMs || timestamp >= windowEndMs) {
+      if (!predicate(entry)) {
         continue;
       }
-      if (predicate(entry)) {
-        count += 1;
+
+      const timestamp = parseTimestamp(entry.timestamp);
+      if (timestamp !== null) {
+        timestamps.push(timestamp);
       }
     }
   }
 
-  return count;
+  return timestamps;
 }
 
-function countClaudeMessages(windowStartMs: number, windowEndMs: number): number {
+function getClaudeMessageTimestamps(): number[] {
   const projectDir = getClaudeProjectDir();
   if (!projectDir) {
-    return 0;
+    return [];
   }
 
   const files = getClaudeSessionFiles(projectDir);
-  return countMessagesFromJsonl(
-    files,
-    windowStartMs,
-    windowEndMs,
-    (entry) => entry.type === "user"
-  );
+  return collectMessageTimestampsFromJsonl(files, (entry) => entry.type === "user");
 }
 
-function countCodexMessages(windowStartMs: number, windowEndMs: number): number {
+function getCodexMessageTimestamps(): number[] {
   const codexRoot = path.join(os.homedir(), ".codex", "sessions");
   const files = walkJsonlFiles(codexRoot);
 
-  return countMessagesFromJsonl(files, windowStartMs, windowEndMs, (entry) => {
+  return collectMessageTimestampsFromJsonl(files, (entry) => {
     if (entry.type !== "event_msg") {
       return false;
     }
@@ -202,15 +337,59 @@ function countCodexMessages(windowStartMs: number, windowEndMs: number): number 
   });
 }
 
+function formatResetTimeFromWindow(windowUsage: RollingWindowUsage): string {
+  if (!windowUsage.hasActiveWindow) {
+    return WAITING_NEXT_MESSAGE_RESET_STR;
+  }
+  return formatResetTime(windowUsage.resetMs);
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function roundOne(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function calculateConfidence(
+  usageSource: "message-estimate" | "codex-rate-limit",
+  usedMessages: number,
+  deltaPercent: number | null
+): UsageConfidence {
+  if (usageSource === "codex-rate-limit" && deltaPercent !== null) {
+    if (deltaPercent <= 5) {
+      return "high";
+    }
+    if (deltaPercent <= 10) {
+      return "medium";
+    }
+    return "low";
+  }
+
+  if (usedMessages > 0) {
+    return "medium";
+  }
+  return "low";
+}
+
 function buildProviderUsage(
   provider: "claude" | "codex",
   planName: string,
   monthlyPriceUsd: number,
   limitMessages: number,
-  usedMessages: number
+  usedMessages: number,
+  resetTimeStr: string,
+  usageSource: "message-estimate" | "codex-rate-limit",
+  estimateUsagePercent: number,
+  rateLimitUsagePercent: number | null,
+  firstMessageAfterResetMs: number | null
 ): ProviderUsage {
-  const usagePercentRaw = limitMessages > 0 ? (usedMessages / limitMessages) * 100 : 0;
-  const usagePercent = Math.min(100, Math.max(0, Math.round(usagePercentRaw * 10) / 10));
+  const estimate = roundOne(clampPercent(estimateUsagePercent));
+  const rateLimit = rateLimitUsagePercent === null ? null : roundOne(clampPercent(rateLimitUsagePercent));
+  const usagePercent = rateLimit ?? estimate;
+  const deltaPercent = rateLimit === null ? null : roundOne(Math.abs(rateLimit - estimate));
+  const driftAlert = deltaPercent !== null && deltaPercent > DRIFT_ALERT_THRESHOLD_PERCENT;
 
   return {
     provider,
@@ -219,38 +398,127 @@ function buildProviderUsage(
     limitMessages,
     usedMessages,
     usagePercent,
+    resetTimeStr,
+    usageSource,
+    confidence: calculateConfidence(usageSource, usedMessages, deltaPercent),
+    estimateUsagePercent: estimate,
+    rateLimitUsagePercent: rateLimit,
+    deltaPercent,
+    driftAlert,
+    firstMessageAfterReset:
+      firstMessageAfterResetMs === null ? null : new Date(firstMessageAfterResetMs).toISOString(),
   };
 }
 
 function calculatePlanUsage(): PlanUsageResult {
   const nowMs = Date.now();
-  const windowStartMs = Math.floor(nowMs / WINDOW_MS) * WINDOW_MS;
-  const windowEndMs = windowStartMs + WINDOW_MS;
-  const resetMs = Math.max(0, windowEndMs - nowMs);
+  const claudeMessageTimestamps = getClaudeMessageTimestamps();
+  const codexMessageTimestamps = getCodexMessageTimestamps();
 
-  const claudeUsedMessages = countClaudeMessages(windowStartMs, windowEndMs);
-  const codexUsedMessages = countCodexMessages(windowStartMs, windowEndMs);
+  const claudeWindowUsage = calculateRollingWindowFromMessageTimestamps(
+    claudeMessageTimestamps,
+    nowMs,
+    WINDOW_MS
+  );
+  const claudeUsedMessages = claudeWindowUsage.usedMessages;
+  const claudeResetStr = formatResetTimeFromWindow(claudeWindowUsage);
+  const claudeEstimateUsagePercent =
+    CLAUDE_LIMIT_MESSAGES_PER_WINDOW > 0
+      ? (claudeUsedMessages / CLAUDE_LIMIT_MESSAGES_PER_WINDOW) * 100
+      : 0;
+
+  const codexRateLimit = findLatestCodexRateLimit();
+  const codexWindowUsage = calculateRollingWindowFromMessageTimestamps(
+    codexMessageTimestamps,
+    nowMs,
+    WINDOW_MS
+  );
+  const codexEstimateUsagePercent =
+    CODEX_LIMIT_MESSAGES_PER_WINDOW > 0
+      ? (codexWindowUsage.usedMessages / CODEX_LIMIT_MESSAGES_PER_WINDOW) * 100
+      : 0;
+  const codexRateLimitResetMs =
+    codexRateLimit === null ? null : codexRateLimit.resetsAtSec * 1000 - nowMs;
+  const codexRateLimitActive = codexRateLimit !== null && (codexRateLimitResetMs ?? 0) > 0;
+
+  const codexUsedMessagesFromRateLimit =
+    !codexRateLimitActive || codexRateLimit === null
+      ? null
+      : Math.round((Math.max(0, Math.min(100, codexRateLimit.usedPercent)) / 100) * CODEX_LIMIT_MESSAGES_PER_WINDOW);
+  const codexUsedMessages = codexUsedMessagesFromRateLimit ?? codexWindowUsage.usedMessages;
+  const codexRateLimitUsagePercent = codexRateLimitActive && codexRateLimit ? codexRateLimit.usedPercent : null;
+  const codexResetStr = codexRateLimitActive
+    ? formatResetTime(Math.max(0, codexRateLimitResetMs ?? 0))
+    : formatResetTimeFromWindow(codexWindowUsage);
+
+  const codexWindowStartMs =
+    codexRateLimitActive && codexRateLimit
+      ? codexRateLimit.resetsAtSec * 1000 - WINDOW_MS
+      : codexWindowUsage.windowStartMs;
+  const codexWindowEndMs =
+    codexRateLimitActive && codexRateLimit
+      ? codexRateLimit.resetsAtSec * 1000
+      : codexWindowUsage.windowEndMs;
+
+  const referenceWindowStartMs = codexWindowStartMs ?? claudeWindowUsage.windowStartMs ?? nowMs;
+  const referenceWindowEndMs = codexWindowEndMs ?? claudeWindowUsage.windowEndMs ?? nowMs;
+  const combinedResetStr =
+    codexRateLimitActive || codexWindowUsage.hasActiveWindow
+      ? `Codex ${codexResetStr}`
+      : claudeWindowUsage.hasActiveWindow
+        ? `Claude ${claudeResetStr}`
+        : WAITING_NEXT_MESSAGE_RESET_STR;
+
+  const resetTimeline: ResetTimelineEntry[] = [
+    ...buildRollingWindowTimeline(claudeMessageTimestamps, nowMs, WINDOW_MS, 3).map((entry) => ({
+      provider: "claude" as const,
+      windowStart: new Date(entry.windowStartMs).toISOString(),
+      windowEnd: new Date(entry.windowEndMs).toISOString(),
+      firstMessageAfterReset: new Date(entry.firstMessageAtMs).toISOString(),
+      messageCount: entry.messageCount,
+      active: entry.isActive,
+    })),
+    ...buildRollingWindowTimeline(codexMessageTimestamps, nowMs, WINDOW_MS, 3).map((entry) => ({
+      provider: "codex" as const,
+      windowStart: new Date(entry.windowStartMs).toISOString(),
+      windowEnd: new Date(entry.windowEndMs).toISOString(),
+      firstMessageAfterReset: new Date(entry.firstMessageAtMs).toISOString(),
+      messageCount: entry.messageCount,
+      active: entry.isActive,
+    })),
+  ].sort((a, b) => b.windowStart.localeCompare(a.windowStart));
 
   return {
     windowHours: WINDOW_HOURS,
-    windowStart: new Date(windowStartMs).toISOString(),
-    windowEnd: new Date(windowEndMs).toISOString(),
-    resetTimeStr: formatResetTime(resetMs),
+    windowStart: new Date(referenceWindowStartMs).toISOString(),
+    windowEnd: new Date(referenceWindowEndMs).toISOString(),
+    resetTimeStr: combinedResetStr,
     claude: buildProviderUsage(
       "claude",
       "Claude Max x5",
       CLAUDE_MONTHLY_PLAN_USD,
       CLAUDE_LIMIT_MESSAGES_PER_WINDOW,
-      claudeUsedMessages
+      claudeUsedMessages,
+      claudeResetStr,
+      "message-estimate",
+      claudeEstimateUsagePercent,
+      null,
+      claudeWindowUsage.windowStartMs
     ),
     codex: buildProviderUsage(
       "codex",
       "Codex Plus",
       CODEX_MONTHLY_PLAN_USD,
       CODEX_LIMIT_MESSAGES_PER_WINDOW,
-      codexUsedMessages
+      codexUsedMessages,
+      codexResetStr,
+      codexRateLimitActive ? "codex-rate-limit" : "message-estimate",
+      codexEstimateUsagePercent,
+      codexRateLimitUsagePercent,
+      codexWindowUsage.windowStartMs
     ),
-    source: "local-jsonl",
+    resetTimeline,
+    source: codexRateLimitActive ? "codex-rate-limit+local-jsonl" : "local-jsonl",
     generatedAt: new Date().toISOString(),
   };
 }

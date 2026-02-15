@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { CategoryChart } from "@/components/CategoryChart";
 import { TechChart } from "@/components/TechChart";
 import { RelationshipGraph } from "@/components/RelationshipGraph";
@@ -15,11 +15,12 @@ import { ClaudeMonitor } from "@/components/claude/ClaudeMonitor";
 import projectData from "@/lib/projects.json";
 import { Project, ProjectData } from "@/lib/types";
 
-const data = projectData as ProjectData;
+const initialData = projectData as ProjectData;
 
 type Tab = "claude" | "overview" | "graph" | "usage";
 
 export default function Home() {
+  const [data, setData] = useState<ProjectData>(initialData);
   const [activeTab, setActiveTab] = useState<Tab>("claude");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTech, setSelectedTech] = useState<string | null>(null);
@@ -29,10 +30,44 @@ export default function Home() {
 
   const { favorites, toggleFavorite, mounted: favoritesMounted } = useFavorites();
 
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+
+    const loadProjectCatalog = async () => {
+      try {
+        const response = await fetch("/api/projects-catalog", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as Partial<ProjectData>;
+        if (!isMounted) {
+          return;
+        }
+        if (!payload.projects || !payload.categories || !payload.technologies) {
+          return;
+        }
+        setData(payload as ProjectData);
+      } catch {
+        // Keep static fallback when auto-discovery fails.
+      }
+    };
+
+    void loadProjectCatalog();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, []);
+
   const filteredByFavorites = useMemo(() => {
     if (!showFavoritesOnly) return data.projects;
     return data.projects.filter((p) => favorites.has(p.id));
-  }, [showFavoritesOnly, favorites]);
+  }, [data.projects, showFavoritesOnly, favorites]);
 
   const handleCategoryClick = (category: string) => {
     setSelectedCategory(category === selectedCategory ? null : category);

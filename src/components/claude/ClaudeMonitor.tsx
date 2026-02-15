@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ChangeEvent } from "react";
 import { SessionCard } from "./SessionList";
 import { StatsSummary } from "./StatsSummary";
 import { RateLimitBar } from "./RateLimitBar";
@@ -13,6 +13,22 @@ import { SessionDetailModal } from "./SessionDetailModal";
 import { TaskModal } from "./TaskModal";
 import { ServerStatus } from "./ServerStatus";
 import { getExchangeRate } from "@/lib/exchange-rate";
+import {
+  CLAUDE_CUSTOM_TITLES_STORAGE_KEY,
+  CLAUDE_CUSTOM_TITLES_UPDATED_EVENT,
+  CODEX_CUSTOM_TITLES_STORAGE_KEY,
+  CODEX_CUSTOM_TITLES_UPDATED_EVENT,
+  hydrateTitleMaps,
+  parseTitleMap,
+} from "@/lib/custom-title-storage";
+import {
+  buildSessionStateBackup,
+  getSessionStateFingerprint,
+  mergeSessionStateBackup,
+  parseSessionStateBackup,
+  type SessionStateBackupV2,
+  type ThemePreference,
+} from "@/lib/session-state-backup";
 import {
   CodexMonitor,
   CodexSessionCard,
@@ -126,6 +142,23 @@ interface ProviderPlanUsage {
   limitMessages: number;
   usedMessages: number;
   usagePercent: number;
+  resetTimeStr: string;
+  usageSource: "message-estimate" | "codex-rate-limit";
+  confidence: "high" | "medium" | "low";
+  estimateUsagePercent: number;
+  rateLimitUsagePercent: number | null;
+  deltaPercent: number | null;
+  driftAlert: boolean;
+  firstMessageAfterReset: string | null;
+}
+
+interface ResetTimelineEntry {
+  provider: "claude" | "codex";
+  windowStart: string;
+  windowEnd: string;
+  firstMessageAfterReset: string;
+  messageCount: number;
+  active: boolean;
 }
 
 interface PlanUsageData {
@@ -135,6 +168,7 @@ interface PlanUsageData {
   resetTimeStr: string;
   claude: ProviderPlanUsage;
   codex: ProviderPlanUsage;
+  resetTimeline: ResetTimelineEntry[];
   source: string;
   generatedAt: string;
 }
@@ -146,6 +180,14 @@ interface ManualTask {
   status: "pending" | "in_progress" | "completed";
   createdAt: string;
   updatedAt: string;
+}
+
+interface BackupApiResponse {
+  exists: boolean;
+  fileName?: string;
+  savedAt?: string;
+  source?: "auto" | "manual-export" | "manual-import";
+  backup?: SessionStateBackupV2;
 }
 
 interface TitleTarget {
@@ -169,8 +211,8 @@ interface PeriodCost {
 
 const FALLBACK_RATE = 150;
 const REFRESH_INTERVAL = 10000;
-const CUSTOM_TITLES_STORAGE_KEY = "claude-custom-titles";
-const CUSTOM_TITLES_UPDATED_EVENT = "claude-custom-titles-updated";
+const DISPLAY_SETTINGS_STORAGE_KEY = "dashboard-display-settings";
+const AUTO_BACKUP_DEBOUNCE_MS = 1200;
 
 export function ClaudeMonitor() {
   // Data states
@@ -193,6 +235,7 @@ export function ClaudeMonitor() {
   const [activeTab, setActiveTab] = useState<"claude" | "codex" | "history" | "manual">("claude");
   const [serverConnected, setServerConnected] = useState(true);
   const [pastCollapsed, setPastCollapsed] = useState(true);
+  const [resetTimelineCollapsed, setResetTimelineCollapsed] = useState(true);
 
   // Modal states
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -205,51 +248,281 @@ export function ClaudeMonitor() {
 
   // Custom titles (localStorage)
   const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
+  const [stateBackupNotice, setStateBackupNotice] = useState<string | null>(null);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(null);
+  const [restoreCandidate, setRestoreCandidate] = useState<{
+    fileName: string;
+    savedAt: string;
+    source: "auto" | "manual-export" | "manual-import";
+    backup: SessionStateBackupV2;
+  } | null>(null);
+  const [dismissedRestoreFingerprint, setDismissedRestoreFingerprint] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const autoBackupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isStateInitializedRef = useRef(false);
+  const lastAutoBackupFingerprintRef = useRef<string>("");
+
+  const loadAndHydrateTitles = useCallback((options?: { dispatchEvent?: boolean }) => {
+    const rawClaudeTitles = parseTitleMap(localStorage.getItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY));
+    const rawCodexTitles = parseTitleMap(localStorage.getItem(CODEX_CUSTOM_TITLES_STORAGE_KEY));
+    const hydrated = hydrateTitleMaps(rawClaudeTitles, rawCodexTitles);
+
+    if (hydrated.claudeChanged) {
+      localStorage.setItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydrated.claudeTitles));
+      if (options?.dispatchEvent) {
+        window.dispatchEvent(new Event(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT));
+      }
+    }
+    if (hydrated.codexChanged) {
+      localStorage.setItem(CODEX_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydrated.codexTitles));
+      if (options?.dispatchEvent) {
+        window.dispatchEvent(new Event(CODEX_CUSTOM_TITLES_UPDATED_EVENT));
+      }
+    }
+
+    setCustomTitles(hydrated.claudeTitles);
+    return hydrated;
+  }, []);
+
+  const applyThemePreference = useCallback((theme: ThemePreference) => {
+    if (theme === "dark") {
+      localStorage.setItem("theme", "dark");
+      document.documentElement.classList.add("dark");
+      return;
+    }
+    if (theme === "light") {
+      localStorage.setItem("theme", "light");
+      document.documentElement.classList.remove("dark");
+      return;
+    }
+    if (theme === "system") {
+      localStorage.setItem("theme", "system");
+      return;
+    }
+    localStorage.removeItem("theme");
+  }, []);
+
+  const buildCurrentStateBackup = useCallback(
+    (overrides?: Partial<{
+      claudeTitles: Record<string, string>;
+      codexTitles: Record<string, string>;
+      manualTasks: ManualTask[];
+      themePreference: ThemePreference;
+      activeTab: "claude" | "codex" | "history" | "manual";
+      pastCollapsed: boolean;
+    }>) =>
+      buildSessionStateBackup({
+        claudeTitles: overrides?.claudeTitles ?? customTitles,
+        codexTitles:
+          overrides?.codexTitles ?? parseTitleMap(localStorage.getItem(CODEX_CUSTOM_TITLES_STORAGE_KEY)),
+        manualTasks: overrides?.manualTasks ?? manualTasks,
+        themePreference:
+          overrides?.themePreference === undefined ? themePreference : overrides.themePreference,
+        displaySettings: {
+          activeTab: overrides?.activeTab ?? activeTab,
+          pastCollapsed: overrides?.pastCollapsed ?? pastCollapsed,
+        },
+      }),
+    [activeTab, customTitles, manualTasks, pastCollapsed, themePreference]
+  );
+
+  const saveDisplaySettings = useCallback(
+    (nextActiveTab: "claude" | "codex" | "history" | "manual", nextPastCollapsed: boolean) => {
+      localStorage.setItem(
+        DISPLAY_SETTINGS_STORAGE_KEY,
+        JSON.stringify({
+          activeTab: nextActiveTab,
+          pastCollapsed: nextPastCollapsed,
+        })
+      );
+    },
+    []
+  );
 
   // Load localStorage data
   useEffect(() => {
-    const savedTitles = localStorage.getItem(CUSTOM_TITLES_STORAGE_KEY);
-    if (savedTitles) {
-      try {
-        setCustomTitles(JSON.parse(savedTitles));
-      } catch {
-        setCustomTitles({});
-      }
-    }
+    loadAndHydrateTitles();
 
     const savedTasks = localStorage.getItem("claude-manual-tasks");
     if (savedTasks) {
-      setManualTasks(JSON.parse(savedTasks));
+      try {
+        setManualTasks(JSON.parse(savedTasks));
+      } catch {
+        setManualTasks([]);
+      }
     }
-  }, []);
+
+    const savedDisplaySettings = localStorage.getItem(DISPLAY_SETTINGS_STORAGE_KEY);
+    if (savedDisplaySettings) {
+      try {
+        const parsed = JSON.parse(savedDisplaySettings) as {
+          activeTab?: "claude" | "codex" | "history" | "manual";
+          pastCollapsed?: boolean;
+        };
+        if (
+          parsed.activeTab === "claude" ||
+          parsed.activeTab === "codex" ||
+          parsed.activeTab === "history" ||
+          parsed.activeTab === "manual"
+        ) {
+          setActiveTab(parsed.activeTab);
+        }
+        if (typeof parsed.pastCollapsed === "boolean") {
+          setPastCollapsed(parsed.pastCollapsed);
+        }
+      } catch {
+        // Ignore invalid display settings
+      }
+    }
+
+    const storedTheme = localStorage.getItem("theme");
+    if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") {
+      setThemePreference(storedTheme);
+    } else {
+      setThemePreference(null);
+    }
+
+    isStateInitializedRef.current = true;
+  }, [loadAndHydrateTitles]);
 
   useEffect(() => {
-    const refreshCustomTitles = () => {
-      const savedTitles = localStorage.getItem(CUSTOM_TITLES_STORAGE_KEY);
-      if (!savedTitles) {
-        setCustomTitles({});
-        return;
-      }
-      try {
-        setCustomTitles(JSON.parse(savedTitles));
-      } catch {
-        setCustomTitles({});
-      }
-    };
+    const refreshCustomTitles = () => loadAndHydrateTitles();
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === CUSTOM_TITLES_STORAGE_KEY) {
+      if (
+        event.key === CLAUDE_CUSTOM_TITLES_STORAGE_KEY ||
+        event.key === CODEX_CUSTOM_TITLES_STORAGE_KEY
+      ) {
         refreshCustomTitles();
       }
     };
 
     window.addEventListener("storage", handleStorage);
-    window.addEventListener(CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+    window.addEventListener(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+    window.addEventListener(CODEX_CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
     return () => {
       window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+      window.removeEventListener(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
+      window.removeEventListener(CODEX_CUSTOM_TITLES_UPDATED_EVENT, refreshCustomTitles);
     };
+  }, [loadAndHydrateTitles]);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const storedTheme = localStorage.getItem("theme");
+      if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") {
+        setThemePreference(storedTheme);
+      } else {
+        setThemePreference(null);
+      }
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    saveDisplaySettings(activeTab, pastCollapsed);
+  }, [activeTab, pastCollapsed, saveDisplaySettings]);
+
+  const persistStateBackup = useCallback(
+    async (
+      source: "auto" | "manual-export" | "manual-import",
+      backup = buildCurrentStateBackup()
+    ) => {
+      try {
+        await fetch("/api/session-state-backup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source,
+            backup,
+          }),
+        });
+      } catch {
+        // Ignore backup persistence failures to keep UI non-blocking.
+      }
+    },
+    [buildCurrentStateBackup]
+  );
+
+  useEffect(() => {
+    if (!isStateInitializedRef.current) {
+      return;
+    }
+
+    const snapshot = buildCurrentStateBackup();
+    const fingerprint = getSessionStateFingerprint(snapshot);
+    if (fingerprint === lastAutoBackupFingerprintRef.current) {
+      return;
+    }
+
+    if (autoBackupTimerRef.current) {
+      clearTimeout(autoBackupTimerRef.current);
+    }
+
+    autoBackupTimerRef.current = setTimeout(() => {
+      lastAutoBackupFingerprintRef.current = fingerprint;
+      void persistStateBackup("auto", snapshot);
+    }, AUTO_BACKUP_DEBOUNCE_MS);
+
+    return () => {
+      if (autoBackupTimerRef.current) {
+        clearTimeout(autoBackupTimerRef.current);
+      }
+    };
+  }, [buildCurrentStateBackup, persistStateBackup]);
+
+  useEffect(() => {
+    const loadLatestBackupCandidate = async () => {
+      try {
+        const response = await fetch("/api/session-state-backup");
+        if (!response.ok) {
+          return;
+        }
+        const data = (await response.json()) as BackupApiResponse;
+        if (!data.exists || !data.backup || !data.fileName || !data.savedAt || !data.source) {
+          return;
+        }
+
+        const latestBackup = buildSessionStateBackup({
+          claudeTitles: data.backup.claudeTitles,
+          codexTitles: data.backup.codexTitles,
+          manualTasks: data.backup.manualTasks,
+          themePreference: data.backup.themePreference,
+          displaySettings: data.backup.displaySettings,
+          exportedAt: data.backup.exportedAt,
+        });
+        const latestFingerprint = getSessionStateFingerprint(latestBackup);
+        const currentFingerprint = getSessionStateFingerprint(buildCurrentStateBackup());
+
+        const hasLocalState =
+          Object.keys(customTitles).length > 0 ||
+          manualTasks.length > 0 ||
+          themePreference !== null;
+
+        const shouldOfferRestore = !hasLocalState && latestFingerprint !== dismissedRestoreFingerprint;
+        if (latestFingerprint !== currentFingerprint && shouldOfferRestore) {
+          setRestoreCandidate({
+            fileName: data.fileName,
+            savedAt: data.savedAt,
+            source: data.source,
+            backup: latestBackup,
+          });
+        }
+      } catch {
+        // Ignore restore candidate load failures.
+      }
+    };
+
+    if (isStateInitializedRef.current) {
+      void loadLatestBackupCandidate();
+    }
+  }, [buildCurrentStateBackup, dismissedRestoreFingerprint]);
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -369,21 +642,146 @@ export function ClaudeMonitor() {
 
   // Handle title edit
   const handleTitleEdit = (provider: "claude" | "codex", sessionId: string, customTitle: string) => {
-    const newTitles = { ...customTitles };
+    const nextClaudeTitles = { ...customTitles };
     const key = getTitleKey(provider, sessionId);
+    const codexKey = getTitleKey("codex", sessionId);
     if (customTitle) {
-      newTitles[key] = customTitle;
-    } else {
-      delete newTitles[key];
+      nextClaudeTitles[key] = customTitle;
       if (provider === "claude") {
-        delete newTitles[sessionId];
+        nextClaudeTitles[sessionId] = customTitle;
+      }
+    } else {
+      delete nextClaudeTitles[key];
+      if (provider === "claude") {
+        delete nextClaudeTitles[sessionId];
       }
     }
-    setCustomTitles(newTitles);
-    localStorage.setItem(CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(newTitles));
-    window.dispatchEvent(new Event(CUSTOM_TITLES_UPDATED_EVENT));
+
+    const nextCodexTitles = parseTitleMap(localStorage.getItem(CODEX_CUSTOM_TITLES_STORAGE_KEY));
+    if (provider === "codex") {
+      if (customTitle) {
+        nextCodexTitles[codexKey] = customTitle;
+      } else {
+        delete nextCodexTitles[codexKey];
+      }
+    }
+
+    const hydrated = hydrateTitleMaps(nextClaudeTitles, nextCodexTitles);
+
+    setCustomTitles(hydrated.claudeTitles);
+    localStorage.setItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydrated.claudeTitles));
+    localStorage.setItem(CODEX_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydrated.codexTitles));
+    window.dispatchEvent(new Event(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT));
+    window.dispatchEvent(new Event(CODEX_CUSTOM_TITLES_UPDATED_EVENT));
+    setStateBackupNotice(null);
     setShowTitleEditModal(false);
     setSelectedTitleTarget(null);
+  };
+
+  const applySessionStateBackup = useCallback(
+    (
+      backup: SessionStateBackupV2,
+      options?: { persistSource?: "manual-import" | "auto"; notice?: string }
+    ) => {
+      const hydratedTitles = hydrateTitleMaps(backup.claudeTitles, backup.codexTitles);
+
+      localStorage.setItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydratedTitles.claudeTitles));
+      localStorage.setItem(CODEX_CUSTOM_TITLES_STORAGE_KEY, JSON.stringify(hydratedTitles.codexTitles));
+      window.dispatchEvent(new Event(CLAUDE_CUSTOM_TITLES_UPDATED_EVENT));
+      window.dispatchEvent(new Event(CODEX_CUSTOM_TITLES_UPDATED_EVENT));
+      setCustomTitles(hydratedTitles.claudeTitles);
+
+      const nextTasks = backup.manualTasks as ManualTask[];
+      setManualTasks(nextTasks);
+      localStorage.setItem("claude-manual-tasks", JSON.stringify(nextTasks));
+
+      setActiveTab(backup.displaySettings.activeTab);
+      setPastCollapsed(backup.displaySettings.pastCollapsed);
+      saveDisplaySettings(backup.displaySettings.activeTab, backup.displaySettings.pastCollapsed);
+
+      applyThemePreference(backup.themePreference);
+      setThemePreference(backup.themePreference);
+
+      setRestoreCandidate(null);
+      setStateBackupNotice(options?.notice ?? "Session state restored.");
+
+      if (options?.persistSource) {
+        const persisted = buildSessionStateBackup({
+          claudeTitles: hydratedTitles.claudeTitles,
+          codexTitles: hydratedTitles.codexTitles,
+          manualTasks: nextTasks,
+          themePreference: backup.themePreference,
+          displaySettings: backup.displaySettings,
+        });
+        const fingerprint = getSessionStateFingerprint(persisted);
+        lastAutoBackupFingerprintRef.current = fingerprint;
+        void persistStateBackup(options.persistSource, persisted);
+      }
+    },
+    [applyThemePreference, persistStateBackup, saveDisplaySettings]
+  );
+
+  const handleExportState = () => {
+    const backup = buildCurrentStateBackup();
+    const fileName = `session-state-backup-${new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .slice(0, 19)}.json`;
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setStateBackupNotice("Session state backup exported.");
+    void persistStateBackup("manual-export", backup);
+  };
+
+  const handleImportStateFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const raw = await file.text();
+      const parsedBackup = parseSessionStateBackup(raw);
+      if (!parsedBackup) {
+        setStateBackupNotice("Import failed: invalid backup file.");
+        return;
+      }
+
+      const merged = mergeSessionStateBackup(buildCurrentStateBackup(), parsedBackup);
+      applySessionStateBackup(merged, {
+        persistSource: "manual-import",
+        notice: "Session state backup imported.",
+      });
+    } catch {
+      setStateBackupNotice("Import failed: could not read file.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handleRestoreCandidate = () => {
+    if (!restoreCandidate) {
+      return;
+    }
+    applySessionStateBackup(restoreCandidate.backup, {
+      persistSource: "manual-import",
+      notice: "Latest backup restored.",
+    });
+  };
+
+  const handleDismissRestoreCandidate = () => {
+    if (restoreCandidate) {
+      setDismissedRestoreFingerprint(getSessionStateFingerprint(restoreCandidate.backup));
+    }
+    setRestoreCandidate(null);
   };
 
   // Handle manual task save
@@ -422,6 +820,15 @@ export function ClaudeMonitor() {
   const activeSessions = buildUnifiedSessions("active");
   const recentSessions = buildUnifiedSessions("recent");
   const pastSessions = buildUnifiedSessions("past");
+
+  const formatTimelineTime = (value: string): string => {
+    return new Date(value).toLocaleString("ja-JP", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   const codexPeriod = useMemo<PeriodCost>(() => {
     const empty: PeriodCost = {
@@ -632,7 +1039,7 @@ export function ClaudeMonitor() {
         <span
           className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
             isClaude
-              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
               : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
           }`}
         >
@@ -643,6 +1050,7 @@ export function ClaudeMonitor() {
             session={item.session}
             exchangeRate={exchangeRate}
             customTitle={getDisplayTitle("claude", item.session.id)}
+            borderClassName={item.session.status === "active" ? "!border-orange-500" : undefined}
             onTitleEdit={() => {
               setSelectedTitleTarget({
                 provider: "claude",
@@ -717,6 +1125,20 @@ export function ClaudeMonitor() {
             Refresh
           </button>
           <button
+            onClick={handleExportState}
+            className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title="Export State"
+          >
+            Export State
+          </button>
+          <button
+            onClick={() => importInputRef.current?.click()}
+            className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title="Import State"
+          >
+            Import State
+          </button>
+          <button
             onClick={() => { setEditingTask(null); setShowTaskModal(true); }}
             className="px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
           >
@@ -724,6 +1146,16 @@ export function ClaudeMonitor() {
           </button>
         </div>
       </div>
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json"
+        onChange={handleImportStateFile}
+        className="hidden"
+      />
+      {stateBackupNotice && (
+        <div className="text-xs text-gray-500 dark:text-gray-400 -mt-4">{stateBackupNotice}</div>
+      )}
 
       {/* API Usage Section (if admin key) */}
       {configData?.keyType === "admin" && apiUsageData && (
@@ -846,6 +1278,59 @@ export function ClaudeMonitor() {
                       </div>
                     )}
                   </section>
+
+                  {restoreCandidate && (
+                    <section className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-200">
+                      Latest backup available: {restoreCandidate.fileName} ({new Date(restoreCandidate.savedAt).toLocaleString("ja-JP")},{" "}
+                      {restoreCandidate.source}).
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          onClick={handleRestoreCandidate}
+                          className="rounded bg-yellow-500 px-3 py-1 text-xs font-semibold text-white hover:bg-yellow-600"
+                        >
+                          Restore Backup
+                        </button>
+                        <button
+                          onClick={handleDismissRestoreCandidate}
+                          className="rounded border border-yellow-400 px-3 py-1 text-xs font-semibold text-yellow-800 hover:bg-yellow-100 dark:text-yellow-200 dark:hover:bg-yellow-900/40"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </section>
+                  )}
+
+                  {planUsageData && (planUsageData.resetTimeline ?? []).length > 0 && (
+                    <section className="rounded-lg border border-gray-200 dark:border-gray-700">
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700/30"
+                        onClick={() => setResetTimelineCollapsed((prev) => !prev)}
+                      >
+                        <span>Reset Timeline</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {resetTimelineCollapsed ? "Show" : "Hide"}
+                        </span>
+                      </button>
+                      {!resetTimelineCollapsed && (
+                        <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-700">
+                          <div className="space-y-1">
+                            {planUsageData.resetTimeline.slice(0, 6).map((entry, index) => (
+                              <div
+                                key={`${entry.provider}-${entry.windowStart}-${index}`}
+                                className="text-xs text-gray-500 dark:text-gray-400"
+                              >
+                                <span className="font-semibold">{entry.provider === "claude" ? "Claude" : "Codex"}</span>{" "}
+                                {entry.active ? "(active)" : "(closed)"} | start {formatTimelineTime(entry.windowStart)} | end{" "}
+                                {formatTimelineTime(entry.windowEnd)} | first msg {formatTimelineTime(entry.firstMessageAfterReset)} | msgs{" "}
+                                {entry.messageCount}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  )}
                 </div>
               ) : null}
             </>
