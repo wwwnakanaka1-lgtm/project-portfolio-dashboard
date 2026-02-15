@@ -1,6 +1,21 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  --background: #f3f7ff;
+  --foreground: #0f172a;
+  --card-bg: #ffffff;
+  --card-border: #dbe4f0;
+  --accent: #2563eb;
+  --accent-light: #3b82f6;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --text-muted: #64748b;
+  --text-secondary: #475569;
+}
+
+.dark {
   --background: #1a1a2e;
   --foreground: #e0e0e0;
   --card-bg: #2d2d44;
@@ -22,10 +37,14 @@
 }
 
 body {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: linear-gradient(135deg, #f5f9ff 0%, #eaf1ff 100%);
   color: var(--foreground);
   font-family: 'Segoe UI', Arial, sans-serif;
   min-height: 100vh;
+}
+
+.dark body {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
 }
 
 /* Container */
