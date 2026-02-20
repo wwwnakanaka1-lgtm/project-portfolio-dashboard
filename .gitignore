@@ -48,3 +48,4 @@ next-env.d.ts
 
 # local session backups
 /backups/*.json
+/backups/usage-snapshots/*.json
