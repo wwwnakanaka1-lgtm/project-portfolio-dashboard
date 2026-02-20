@@ -60,15 +60,20 @@ function dirNameToProjectPath(dirName: string): string {
 
 // Extract project name from path
 // e.g., "c:/Users/wwwhi/Create/fukunage-line-bot" -> "fukunage-line-bot"
-function getProjectName(projectPath: string): string {
+// Returns null if not in Create folder
+function getProjectName(projectPath: string): string | null {
   const parts = projectPath.split(/[/\\]/);
   // Find the part after "Create" if it exists
   const createIndex = parts.findIndex(p => p.toLowerCase() === "create");
   if (createIndex !== -1 && createIndex < parts.length - 1) {
     return parts[createIndex + 1];
   }
-  return parts[parts.length - 1] || projectPath;
+  // Not in Create folder - return null to indicate "Uncategorized"
+  return null;
 }
+
+// Special project name for sessions outside of Create folder
+const UNCATEGORIZED_PROJECT = "Uncategorized";
 
 // Parse JSONL file to get token usage
 function getSessionTokenUsage(jsonlPath: string): { usage: TokenUsage; lastModified: string } | null {
@@ -125,24 +130,49 @@ function calculateCost(usage: TokenUsage): number {
   return cost;
 }
 
+// Extract project name from session's firstPrompt or working directory
+function extractProjectFromSession(firstPrompt: string | undefined, cwd: string | undefined): string {
+  // Try to extract from firstPrompt (IDE opened file paths)
+  if (firstPrompt) {
+    const match = firstPrompt.match(/Create[/\\]([a-zA-Z0-9_-]+)[/\\]/i);
+    if (match) {
+      return match[1];
+    }
+  }
+  // Try to extract from working directory
+  if (cwd) {
+    const match = cwd.match(/Create[/\\]([a-zA-Z0-9_-]+)/i);
+    if (match) {
+      return match[1];
+    }
+  }
+  return UNCATEGORIZED_PROJECT;
+}
+
 // Compute project costs (expensive operation, cached)
+// Uses same scanning method as usage-stats for consistency
 function computeProjectCosts(): { costs: ProjectCost[]; totalCost: number; totalProjects: number } | { error: string } {
   const homeDir = os.homedir();
   const projectsDir = path.join(homeDir, ".claude", "projects");
 
-  if (!fs.existsSync(projectsDir)) {
-    return { error: "Projects directory not found" };
+  // Find the correct project directory (same as usage-stats)
+  const variations = ["C--Users-wwwhi", "c--Users-wwwhi"];
+  let projectDir = "";
+
+  for (const dir of variations) {
+    const testPath = path.join(projectsDir, dir);
+    if (fs.existsSync(testPath)) {
+      projectDir = testPath;
+      break;
+    }
   }
 
-  // Get all project directories
-  const projectDirs = fs.readdirSync(projectsDir).filter(name => {
-    const fullPath = path.join(projectsDir, name);
-    try {
-      return fs.statSync(fullPath).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+  if (!projectDir) {
+    return { error: "Project directory not found" };
+  }
+
+  // Read all JSONL files from the main directory only
+  const files = fs.readdirSync(projectDir).filter(f => f.endsWith(".jsonl"));
 
   // Aggregate costs by project
   const projectCosts = new Map<string, {
@@ -152,120 +182,104 @@ function computeProjectCosts(): { costs: ProjectCost[]; totalCost: number; total
     lastUsed: string;
   }>();
 
-  for (const dirName of projectDirs) {
-    const projectPath = dirNameToProjectPath(dirName);
-    const projectName = getProjectName(projectPath);
+  for (const file of files) {
+    // Skip agent files (they're subprocesses, already counted in main session)
+    if (file.startsWith("agent-")) continue;
 
-    // Skip the root user directory (just "c:/Users/wwwhi" or similar)
-    if (!projectPath.toLowerCase().includes("/create/")) {
-      continue;
-    }
-
-    const dirPath = path.join(projectsDir, dirName);
-
-    // Get all JSONL files in this directory
-    let files: string[];
+    const jsonlPath = path.join(projectDir, file);
+    let content: string;
     try {
-      files = fs.readdirSync(dirPath).filter(f => f.endsWith(".jsonl"));
+      content = fs.readFileSync(jsonlPath, "utf8");
     } catch {
       continue;
     }
 
-    for (const file of files) {
-      // Skip agent files (they're subprocesses, already counted in main session)
-      if (file.startsWith("agent-")) continue;
+    const lines = content.split("\n").filter(l => l.trim());
+    if (lines.length === 0) continue;
 
-      const jsonlPath = path.join(dirPath, file);
-      const result = getSessionTokenUsage(jsonlPath);
+    // Extract project info from first entry
+    let projectName = UNCATEGORIZED_PROJECT;
+    let sessionDate = "";
 
-      if (!result || (result.usage.inputTokens === 0 && result.usage.outputTokens === 0)) {
-        continue;
-      }
+    // Look for project info in the session (check more lines for better detection)
+    for (const line of lines.slice(0, 20)) {
+      try {
+        const entry = JSON.parse(line);
 
-      const cost = calculateCost(result.usage);
-      const totalTokens = result.usage.inputTokens + result.usage.outputTokens +
-        result.usage.cacheReadTokens + result.usage.cacheCreationTokens;
-
-      const existing = projectCosts.get(projectName) || {
-        totalCost: 0,
-        sessionCount: 0,
-        totalTokens: 0,
-        lastUsed: result.lastModified,
-      };
-
-      existing.totalCost += cost;
-      existing.sessionCount += 1;
-      existing.totalTokens += totalTokens;
-
-      if (result.lastModified > existing.lastUsed) {
-        existing.lastUsed = result.lastModified;
-      }
-
-      projectCosts.set(projectName, existing);
-    }
-  }
-
-  // Also scan the main sessions-index.json for sessions with specific project paths
-  const mainDirs = ["C--Users-wwwhi", "c--Users-wwwhi"];
-  for (const mainDir of mainDirs) {
-    const sessionsFile = path.join(projectsDir, mainDir, "sessions-index.json");
-    if (!fs.existsSync(sessionsFile)) continue;
-
-    try {
-      const sessionsData = JSON.parse(fs.readFileSync(sessionsFile, "utf8"));
-      const entries = sessionsData.entries || [];
-
-      for (const session of entries) {
-        const jsonlPath = session.fullPath;
-        if (!jsonlPath || !fs.existsSync(jsonlPath)) continue;
-
-        const result = getSessionTokenUsage(jsonlPath);
-        if (!result || (result.usage.inputTokens === 0 && result.usage.outputTokens === 0)) {
-          continue;
-        }
-
-        // Try to extract project name from firstPrompt (IDE opened file paths)
-        let projectName: string | null = null;
-        if (session.firstPrompt) {
-          const match = session.firstPrompt.match(/Create[/\\]([a-zA-Z0-9_-]+)[/\\]/i);
-          if (match) {
-            projectName = match[1];
+        // Try cwd first (most reliable)
+        if (entry.cwd && projectName === UNCATEGORIZED_PROJECT) {
+          const cwdMatch = entry.cwd.match(/Create[/\\]([a-zA-Z0-9_-]+)/i);
+          if (cwdMatch) {
+            projectName = cwdMatch[1];
           }
         }
 
-        if (!projectName) continue;
-
-        const cost = calculateCost(result.usage);
-        const totalTokens = result.usage.inputTokens + result.usage.outputTokens +
-          result.usage.cacheReadTokens + result.usage.cacheCreationTokens;
-
-        const existing = projectCosts.get(projectName) || {
-          totalCost: 0,
-          sessionCount: 0,
-          totalTokens: 0,
-          lastUsed: session.modified || session.created || result.lastModified,
-        };
-
-        existing.totalCost += cost;
-        existing.sessionCount += 1;
-        existing.totalTokens += totalTokens;
-
-        const sessionDate = session.modified || session.created || result.lastModified;
-        if (sessionDate > existing.lastUsed) {
-          existing.lastUsed = sessionDate;
+        // Try message content (file paths mentioned)
+        if (projectName === UNCATEGORIZED_PROJECT && entry.message?.content) {
+          const content = typeof entry.message.content === 'string'
+            ? entry.message.content
+            : JSON.stringify(entry.message.content);
+          const contentMatch = content.match(/Create[/\\]([a-zA-Z0-9_-]+)[/\\]/i);
+          if (contentMatch) {
+            projectName = contentMatch[1];
+          }
         }
 
-        projectCosts.set(projectName, existing);
+        // Try tool results (file paths in tool output)
+        if (projectName === UNCATEGORIZED_PROJECT && entry.toolResult) {
+          const toolContent = typeof entry.toolResult === 'string'
+            ? entry.toolResult
+            : JSON.stringify(entry.toolResult);
+          const toolMatch = toolContent.match(/Create[/\\]([a-zA-Z0-9_-]+)[/\\]/i);
+          if (toolMatch) {
+            projectName = toolMatch[1];
+          }
+        }
+
+        if (!sessionDate && entry.timestamp) {
+          sessionDate = entry.timestamp;
+        }
+
+        if (projectName !== UNCATEGORIZED_PROJECT) break;
+      } catch {
+        // Skip invalid JSON
       }
-    } catch {
-      // Skip if error reading sessions file
     }
+
+    // Calculate token usage
+    const result = getSessionTokenUsage(jsonlPath);
+    if (!result || (result.usage.inputTokens === 0 && result.usage.outputTokens === 0)) {
+      continue;
+    }
+
+    const cost = calculateCost(result.usage);
+    const totalTokens = result.usage.inputTokens + result.usage.outputTokens +
+      result.usage.cacheReadTokens + result.usage.cacheCreationTokens;
+
+    const existing = projectCosts.get(projectName) || {
+      totalCost: 0,
+      sessionCount: 0,
+      totalTokens: 0,
+      lastUsed: result.lastModified,
+    };
+
+    existing.totalCost += cost;
+    existing.sessionCount += 1;
+    existing.totalTokens += totalTokens;
+
+    if (result.lastModified > existing.lastUsed) {
+      existing.lastUsed = result.lastModified;
+    }
+
+    projectCosts.set(projectName, existing);
   }
 
   // Convert to array
   const costs: ProjectCost[] = Array.from(projectCosts.entries()).map(
     ([projectName, data]) => ({
-      projectPath: `C:/Users/wwwhi/Create/${projectName}`,
+      projectPath: projectName === UNCATEGORIZED_PROJECT
+        ? "C:/Users/wwwhi"
+        : `C:/Users/wwwhi/Create/${projectName}`,
       projectName,
       totalCost: data.totalCost,
       sessionCount: data.sessionCount,

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 
@@ -10,7 +10,7 @@ interface TokenUsage {
   totalTokens: number;
 }
 
-interface Session {
+export interface Session {
   id: string;
   name: string;
   messageCount: number;
@@ -24,7 +24,7 @@ interface Session {
   isUnindexed?: boolean;
 }
 
-interface GroupedSessions {
+export interface GroupedSessions {
   active: Session[];
   recent: Session[];
   past: Session[];
@@ -49,9 +49,17 @@ interface SessionCardProps {
   customTitle?: string;
   onTitleEdit: () => void;
   onClick: () => void;
+  borderClassName?: string;
 }
 
-function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick }: SessionCardProps) {
+export function SessionCard({
+  session,
+  exchangeRate,
+  customTitle,
+  onTitleEdit,
+  onClick,
+  borderClassName,
+}: SessionCardProps) {
   const [todos, setTodos] = useState<Todo[]>([]);
 
   useEffect(() => {
@@ -79,11 +87,11 @@ function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick 
   };
 
   const formatTokens = (tokens: number) => {
-    if (tokens >= 1000000) {
-      return `${(tokens / 1000000).toFixed(2)}M`;
+    if (tokens >= 1_000_000) {
+      return `${(tokens / 1_000_000).toFixed(2)}M`;
     }
-    if (tokens >= 1000) {
-      return `${(tokens / 1000).toFixed(1)}K`;
+    if (tokens >= 1_000) {
+      return `${(tokens / 1_000).toFixed(1)}K`;
     }
     return tokens.toString();
   };
@@ -103,19 +111,18 @@ function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick 
   const completedCount = todos.filter((t) => t.status === "completed").length;
   const progressPercent = todos.length > 0 ? Math.round((completedCount / todos.length) * 100) : 0;
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: Todo["status"]) => {
     switch (status) {
       case "completed":
-        return "✅";
+        return "✓";
       case "in_progress":
-        return "🔄";
+        return "↻";
       default:
-        return "⏳";
+        return "⌛";
     }
   };
 
-  // Calculate usage gauge
-  const maxCostForGauge = 5; // $5 as 100%
+  const maxCostForGauge = 5;
   const usagePercent = Math.min(100, (session.estimatedCost / maxCostForGauge) * 100);
   const getUsageColorClasses = () => {
     if (usagePercent >= 80) return { bar: "bg-red-500", text: "text-red-500" };
@@ -126,14 +133,12 @@ function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick 
 
   return (
     <div
-      className={`bg-white dark:bg-gray-800 rounded-lg border ${getCardClass()} p-4 cursor-pointer hover:shadow-md transition-shadow`}
+      className={`bg-white dark:bg-gray-800 rounded-lg border ${getCardClass()} ${borderClassName ?? ""} p-4 cursor-pointer hover:shadow-md transition-shadow`}
       onClick={onClick}
     >
       <div className="flex items-center justify-between mb-2 gap-2">
         <div className="flex items-center gap-1 min-w-0 flex-1">
-          <span className="font-medium text-gray-900 dark:text-white truncate">
-            {customTitle || session.name}
-          </span>
+          <span className="font-medium text-gray-900 dark:text-white truncate">{customTitle || session.name}</span>
           <button
             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-xs flex-shrink-0"
             onClick={(e) => {
@@ -142,67 +147,56 @@ function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick 
             }}
             title="タイトルを編集"
           >
-            ✏️
+            ✎
           </button>
         </div>
-        <span className={`text-sm flex-shrink-0 ${getTimeClass()}`}>
-          {formatTime(session.minutesAgo)}
-        </span>
+        <span className={`text-sm flex-shrink-0 ${getTimeClass()}`}>{formatTime(session.minutesAgo)}</span>
       </div>
 
       <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
         <span>💬 {session.messageCount}</span>
-        {session.tokenUsage && (
-          <span>🔤 {formatTokens(session.tokenUsage.totalTokens)}</span>
-        )}
-        {session.projectPath && (
-          <span title={session.projectPath}>📁 {session.projectPath.split(/[/\\]/).pop()}</span>
-        )}
+        {session.tokenUsage && <span>🔤 {formatTokens(session.tokenUsage.totalTokens)}</span>}
       </div>
 
-      {/* Token Usage Gauge */}
       {session.tokenUsage && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs text-gray-500 dark:text-gray-400">トークン使用量</span>
             <span className="text-xs text-green-600 dark:text-green-400">
-              ${session.estimatedCost.toFixed(4)} (¥{Math.round(session.estimatedCost * exchangeRate).toLocaleString()})
+              ${session.estimatedCost.toFixed(4)} (￥{Math.round(session.estimatedCost * exchangeRate).toLocaleString()})
             </span>
           </div>
           <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className={`h-full ${usageColors.bar} transition-all duration-300`}
-              style={{ width: `${usagePercent}%` }}
-            />
+            <div className={`h-full ${usageColors.bar} transition-all duration-300`} style={{ width: `${usagePercent}%` }} />
           </div>
           <div className="flex items-center justify-between mt-1">
             <span className="text-xs text-gray-500 dark:text-gray-400">入力: {formatTokens(session.tokenUsage.inputTokens)}</span>
-            <span className={`text-xs ${usageColors.text}`}>
-              {usagePercent.toFixed(1)}%
-            </span>
+            <span className={`text-xs ${usageColors.text}`}>{usagePercent.toFixed(1)}%</span>
             <span className="text-xs text-gray-500 dark:text-gray-400">出力: {formatTokens(session.tokenUsage.outputTokens)}</span>
           </div>
           {(session.tokenUsage.cacheReadTokens > 0 || session.tokenUsage.cacheCreationTokens > 0) && (
             <div className="flex items-center gap-4 mt-1">
-              <span className="text-xs text-gray-400 dark:text-gray-500">キャッシュ読取: {formatTokens(session.tokenUsage.cacheReadTokens)}</span>
-              <span className="text-xs text-gray-400 dark:text-gray-500">キャッシュ作成: {formatTokens(session.tokenUsage.cacheCreationTokens)}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                キャッシュ読取: {formatTokens(session.tokenUsage.cacheReadTokens)}
+              </span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                キャッシュ作成: {formatTokens(session.tokenUsage.cacheCreationTokens)}
+              </span>
             </div>
           )}
         </div>
       )}
 
-      {/* Inline Tasks */}
       {todos.length > 0 && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">タスク進捗</span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">{completedCount}/{todos.length} ({progressPercent}%)</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {completedCount}/{todos.length} ({progressPercent}%)
+            </span>
           </div>
           <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-2">
-            <div
-              className="h-full bg-green-500 transition-all duration-300"
-              style={{ width: `${progressPercent}%` }}
-            />
+            <div className="h-full bg-green-500 transition-all duration-300" style={{ width: `${progressPercent}%` }} />
           </div>
           <div className="space-y-1">
             {todos.slice(0, 5).map((todo, idx) => (
@@ -212,18 +206,14 @@ function SessionCard({ session, exchangeRate, customTitle, onTitleEdit, onClick 
                   todo.status === "completed"
                     ? "text-green-600 dark:text-green-400 line-through"
                     : todo.status === "in_progress"
-                    ? "text-blue-600 dark:text-blue-400"
-                    : "text-gray-600 dark:text-gray-400"
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-gray-600 dark:text-gray-400"
                 }`}
               >
                 {getStatusIcon(todo.status)} {todo.content}
               </div>
             ))}
-            {todos.length > 5 && (
-              <div className="text-xs text-gray-500">
-                ... 他{todos.length - 5}件
-              </div>
-            )}
+            {todos.length > 5 && <div className="text-xs text-gray-500">... 他{todos.length - 5}件</div>}
           </div>
         </div>
       )}
@@ -236,7 +226,6 @@ export function SessionList({ grouped, exchangeRate, customTitles, onTitleEdit, 
 
   return (
     <>
-      {/* Active Sessions */}
       <section className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
           アクティブ (5分以内)
@@ -259,7 +248,6 @@ export function SessionList({ grouped, exchangeRate, customTitles, onTitleEdit, 
         </div>
       </section>
 
-      {/* Recent Sessions */}
       <section className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
           最近 (1時間以内)
@@ -282,13 +270,12 @@ export function SessionList({ grouped, exchangeRate, customTitles, onTitleEdit, 
         </div>
       </section>
 
-      {/* Past Sessions (Collapsible) */}
       <section className="mb-6">
         <h2
           className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2 cursor-pointer hover:text-blue-600"
           onClick={() => setPastCollapsed(!pastCollapsed)}
         >
-          <span className={`transform transition-transform ${pastCollapsed ? "" : "rotate-90"}`}>▶</span>
+          <span className={`transform transition-transform ${pastCollapsed ? "" : "rotate-90"}`}>{">"}</span>
           過去のセッション
           <span className="text-sm font-normal text-gray-500">({grouped.past.length})</span>
         </h2>

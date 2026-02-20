@@ -46,9 +46,15 @@ export function SessionCard({ session, exchangeRate, onClick }: SessionCardProps
   useEffect(() => {
     const savedTitles = localStorage.getItem("claude-custom-titles");
     if (savedTitles) {
-      const titles = JSON.parse(savedTitles);
-      if (titles[session.id]) {
-        setCustomTitle(titles[session.id]);
+      try {
+        const titles = JSON.parse(savedTitles) as Record<string, string>;
+        const namespaced = titles[`claude:${session.id}`];
+        const legacy = titles[session.id];
+        if (namespaced || legacy) {
+          setCustomTitle(namespaced || legacy);
+        }
+      } catch {
+        // Ignore invalid stored value
       }
     }
   }, [session.id]);

@@ -339,14 +339,39 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
 
 export async function GET() {
   try {
-    // Use cached result if available
-    const result = getCachedSync("usage-stats", USAGE_STATS_CACHE_TTL, computeUsageStats);
+    // 1. Compute live stats from JSONL files (cached)
+    const liveResult = getCachedSync("usage-stats", USAGE_STATS_CACHE_TTL, computeUsageStats);
 
-    if ("error" in result) {
-      return NextResponse.json({ error: result.error }, { status: 404 });
+    // 2. Load historical snapshots
+    const { loadAllSnapshots, saveSnapshot, shouldAutoSnapshot, getSnapshotDir, mergeUsageData } = await import("@/lib/usage-snapshot");
+    const snapshots = loadAllSnapshots();
+
+    if ("error" in liveResult) {
+      // Even if live data fails, try to return snapshot-only data
+      if (snapshots.length === 0) {
+        return NextResponse.json({ error: liveResult.error }, { status: 404 });
+      }
+      const fallbackResult = mergeUsageData(null, snapshots);
+      return NextResponse.json(fallbackResult);
     }
 
-    return NextResponse.json(result);
+    // 3. Merge live + historical
+    const mergedResult = mergeUsageData(liveResult, snapshots);
+
+    // 4. Auto-snapshot live data (fire-and-forget, once per day)
+    const snapshotDir = getSnapshotDir();
+    if (shouldAutoSnapshot(snapshotDir)) {
+      try {
+        saveSnapshot({
+          dailyActivity: liveResult.dailyActivity,
+          monthlySummary: liveResult.monthlySummary,
+        });
+      } catch (err) {
+        console.error("Auto-snapshot failed:", err);
+      }
+    }
+
+    return NextResponse.json(mergedResult);
   } catch (error) {
     console.error("Error reading JSONL files:", error);
     return NextResponse.json(

@@ -36,6 +36,7 @@ export function ProjectTable({
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [searchTerm, setSearchTerm] = useState("");
   const [projectCosts, setProjectCosts] = useState<Map<string, ProjectCost>>(new Map());
+  const [totalApiCost, setTotalApiCost] = useState(0);
   const [exchangeRate, setExchangeRate] = useState(150);
 
   // Fetch project costs
@@ -51,6 +52,8 @@ export function ProjectTable({
             costsMap.set(cost.projectName.toLowerCase(), cost);
           }
           setProjectCosts(costsMap);
+          // Store total cost from API (includes Uncategorized)
+          setTotalApiCost(data.totalCost || 0);
         }
       } catch {
         // Ignore errors
@@ -157,8 +160,11 @@ export function ProjectTable({
     );
   };
 
-  // Calculate total cost for all displayed projects
-  const totalDisplayedCost = filteredProjects.reduce((sum, p) => sum + getProjectCost(p), 0);
+  // Calculate total cost - use API total when no filters applied
+  const isFiltered = !!(selectedCategory || selectedTech || searchTerm);
+  const totalDisplayedCost = isFiltered
+    ? filteredProjects.reduce((sum, p) => sum + getProjectCost(p), 0)
+    : totalApiCost;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
