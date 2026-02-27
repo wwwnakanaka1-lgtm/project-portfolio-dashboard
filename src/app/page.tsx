@@ -203,7 +203,10 @@ export default function Home() {
 
       {/* Main Content */}
       <main id="main-content" className="max-w-7xl mx-auto px-4 py-6">
-        {activeTab === "claude" && <ClaudeMonitor />}
+        {/* ClaudeMonitor: always mounted, hidden via CSS to preserve state */}
+        <div className={activeTab === "claude" ? "" : "hidden"}>
+          <ClaudeMonitor />
+        </div>
 
         {activeTab === "overview" && (
           <div className="space-y-6">

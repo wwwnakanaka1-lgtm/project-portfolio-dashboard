@@ -29,6 +29,16 @@ interface DailyActivity {
   toolCallCount: number;
 }
 
+interface MonthlySummary {
+  month: string;
+  cost: number;
+  days: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreateTokens: number;
+}
+
 interface UsageData {
   totalCost: number;
   totalTokens: number;
@@ -36,6 +46,7 @@ interface UsageData {
   totalMessages: number;
   modelUsage: Record<string, ModelUsage>;
   dailyActivity: DailyActivity[];
+  monthlySummary: MonthlySummary[];
   lastUpdated: string;
   dataSource: string;
 }
@@ -178,7 +189,7 @@ export function UsageStats() {
             return (
               <div key={model} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-medium text-gray-900 dark:text-white">{modelName}</span>
+                  <span className="font-medium text-gray-900 dark:text-white" translate="no">{modelName}</span>
                   <div className="text-right">
                     <span className="text-lg font-bold text-green-600">{formatUSD(usage.cost)}</span>
                     <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">({formatJPY(usage.cost)})</span>
@@ -217,6 +228,48 @@ export function UsageStats() {
           })}
         </div>
       </div>
+
+      {/* Monthly Cost Chart */}
+      {data.monthlySummary && data.monthlySummary.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">
+            月別コスト推移
+          </h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.monthlySummary.slice(-12).map((m) => ({
+                month: m.month.replace(/^\d{4}-/, (y) => "").replace(/^0/, ""),
+                label: `${m.month.split("-")[0]}年${parseInt(m.month.split("-")[1])}月`,
+                cost: m.cost,
+                costJPY: Math.round(m.cost * exchangeRate),
+                days: m.days,
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => `${v}月`}
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={(v) => `$${v}`}
+                />
+                <Tooltip
+                  formatter={(value, name) => {
+                    const v = Number(value);
+                    if (name === "cost") {
+                      return [`$${v.toFixed(2)} (¥${Math.round(v * exchangeRate).toLocaleString()})`, "コスト"];
+                    }
+                    return [v, name];
+                  }}
+                  labelFormatter={(label) => `${label}月`}
+                />
+                <Bar dataKey="cost" fill="#10B981" name="cost" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Activity Chart */}
       <div>
