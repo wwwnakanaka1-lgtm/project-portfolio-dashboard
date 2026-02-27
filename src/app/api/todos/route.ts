@@ -24,54 +24,276 @@ interface SessionTodos {
   };
 }
 
+const SESSION_LOG_SCAN_BYTES = 2 * 1024 * 1024; // 2MB tail scan
+const SESSION_LOG_SCAN_BYTES_FALLBACK = 8 * 1024 * 1024; // 8MB fallback scan
+
 // Get todos directory
 function getTodosDir(): string {
   const homeDir = os.homedir();
   return path.join(homeDir, ".claude", "todos");
 }
 
-// Read todos for a specific session (merge all matching files)
-function readTodosForSession(sessionId: string): Todo[] {
-  const todosDir = getTodosDir();
+function normalizeTodoStatus(status: unknown): Todo["status"] {
+  const value = String(status ?? "").trim().toLowerCase();
+  if (value === "completed" || value === "complete" || value === "done" || value === "finished") {
+    return "completed";
+  }
+  if (
+    value === "in_progress" ||
+    value === "in-progress" ||
+    value === "inprogress" ||
+    value === "active" ||
+    value === "working"
+  ) {
+    return "in_progress";
+  }
+  return "pending";
+}
 
-  if (!fs.existsSync(todosDir)) {
+function normalizeTodo(raw: unknown): Todo | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const value = raw as Record<string, unknown>;
+  const content =
+    typeof value.content === "string" && value.content.trim()
+      ? value.content.trim()
+      : typeof value.activeForm === "string" && value.activeForm.trim()
+      ? value.activeForm.trim()
+      : "";
+
+  if (!content) {
+    return null;
+  }
+
+  const activeForm =
+    typeof value.activeForm === "string" && value.activeForm.trim() ? value.activeForm.trim() : undefined;
+
+  return {
+    content,
+    status: normalizeTodoStatus(value.status),
+    ...(activeForm ? { activeForm } : {}),
+  };
+}
+
+function normalizeTodoList(rawTodos: unknown): Todo[] {
+  if (!Array.isArray(rawTodos)) {
     return [];
   }
 
-  try {
-    const files = fs.readdirSync(todosDir);
-    // Find ALL files matching sessionId pattern
-    const matchingFiles = files.filter((f) => f.startsWith(sessionId));
+  const todoMap = new Map<string, Todo>();
+  for (const rawTodo of rawTodos) {
+    const todo = normalizeTodo(rawTodo);
+    if (!todo) {
+      continue;
+    }
+    const key = `${todo.content.toLowerCase()}||${(todo.activeForm ?? "").toLowerCase()}`;
+    todoMap.set(key, todo);
+  }
 
-    if (matchingFiles.length === 0) {
-      return [];
+  return Array.from(todoMap.values());
+}
+
+function readFileTail(filePath: string, maxBytes: number): string {
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size <= 0) {
+      return "";
     }
 
-    // Collect all todos from matching files, deduplicate by content
+    const bytesToRead = Math.min(stat.size, maxBytes);
+    const buffer = Buffer.alloc(bytesToRead);
+    const fd = fs.openSync(filePath, "r");
+    try {
+      fs.readSync(fd, buffer, 0, bytesToRead, stat.size - bytesToRead);
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    return buffer.toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function findSessionJsonlPath(sessionId: string): string | null {
+  const homeDir = os.homedir();
+  const projectsRoot = path.join(homeDir, ".claude", "projects");
+  if (!fs.existsSync(projectsRoot)) {
+    return null;
+  }
+
+  const preferredRoots = ["C--Users-wwwhi", "c--Users-wwwhi"].map((dir) =>
+    path.join(projectsRoot, dir)
+  );
+
+  for (const root of preferredRoots) {
+    const candidate = path.join(root, `${sessionId}.jsonl`);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  try {
+    const roots = fs.readdirSync(projectsRoot, { withFileTypes: true });
+    for (const root of roots) {
+      if (!root.isDirectory()) {
+        continue;
+      }
+      const candidate = path.join(projectsRoot, root.name, `${sessionId}.jsonl`);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function extractLatestTodosFromJsonLines(lines: string[]): Todo[] {
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i]?.trim();
+    if (!line) {
+      continue;
+    }
+
+    try {
+      const entry = JSON.parse(line) as Record<string, unknown>;
+
+      const toolUseResult = entry.toolUseResult as Record<string, unknown> | undefined;
+      if (toolUseResult && Array.isArray(toolUseResult.newTodos)) {
+        const todos = normalizeTodoList(toolUseResult.newTodos);
+        if (todos.length > 0) {
+          return todos;
+        }
+      }
+
+      const message = entry.message as Record<string, unknown> | undefined;
+      const messageContent = message?.content;
+      if (Array.isArray(messageContent)) {
+        for (let j = messageContent.length - 1; j >= 0; j -= 1) {
+          const item = messageContent[j] as Record<string, unknown>;
+          if (item?.type !== "tool_use" || item?.name !== "TodoWrite") {
+            continue;
+          }
+          const input = item.input as Record<string, unknown> | undefined;
+          if (Array.isArray(input?.todos)) {
+            const todos = normalizeTodoList(input.todos);
+            if (todos.length > 0) {
+              return todos;
+            }
+          }
+        }
+      }
+
+      if (Array.isArray(entry.todos)) {
+        const todos = normalizeTodoList(entry.todos);
+        if (todos.length > 0) {
+          return todos;
+        }
+      }
+    } catch {
+      // Skip invalid JSON lines
+    }
+  }
+
+  return [];
+}
+
+function readTodosFromSessionLogUncached(sessionId: string): Todo[] {
+  const sessionPath = findSessionJsonlPath(sessionId);
+  if (!sessionPath) {
+    return [];
+  }
+
+  const tail = readFileTail(sessionPath, SESSION_LOG_SCAN_BYTES);
+  if (tail) {
+    const todos = extractLatestTodosFromJsonLines(tail.split(/\r?\n/));
+    if (todos.length > 0) {
+      return todos;
+    }
+  }
+
+  const fallbackTail = readFileTail(sessionPath, SESSION_LOG_SCAN_BYTES_FALLBACK);
+  if (fallbackTail) {
+    return extractLatestTodosFromJsonLines(fallbackTail.split(/\r?\n/));
+  }
+
+  return [];
+}
+
+function readTodosFromSessionLog(sessionId: string): Todo[] {
+  return getCachedSync(`session-log-todos:${sessionId}`, TODOS_CACHE_TTL, () =>
+    readTodosFromSessionLogUncached(sessionId)
+  );
+}
+
+// Read todos for a specific session (merge all matching files)
+function readTodosForSessionUncached(sessionId: string): Todo[] {
+  const todosDir = getTodosDir();
+
+  if (!fs.existsSync(todosDir)) {
+    return readTodosFromSessionLog(sessionId);
+  }
+
+  try {
+    const files = fs.readdirSync(todosDir, { withFileTypes: true });
+    // Find ALL files matching sessionId pattern
+    const matchingFiles = files
+      .filter((entry) => entry.isFile() && entry.name.startsWith(sessionId))
+      .map((entry) => {
+        const fullPath = path.join(todosDir, entry.name);
+        const stats = fs.statSync(fullPath);
+        return {
+          name: entry.name,
+          fullPath,
+          modified: stats.mtime.getTime(),
+        };
+      })
+      .sort((a, b) => a.modified - b.modified || a.name.localeCompare(b.name));
+
+    if (matchingFiles.length === 0) {
+      return readTodosFromSessionLog(sessionId);
+    }
+
+    // Merge snapshots chronologically so newer snapshots override older ones
     const allTodos = new Map<string, Todo>();
 
     for (const file of matchingFiles) {
       try {
-        const data = fs.readFileSync(path.join(todosDir, file), "utf8");
-        const todos: Todo[] = JSON.parse(data);
+        const data = fs.readFileSync(file.fullPath, "utf8");
+        const todos = normalizeTodoList(JSON.parse(data));
 
         for (const todo of todos) {
-          // Use content as key to avoid duplicates
-          const key = todo.content || todo.activeForm || "";
-          if (key && (!allTodos.has(key) || todo.status !== "pending")) {
-            // Prefer non-pending status (completed > in_progress > pending)
-            allTodos.set(key, todo);
-          }
+          const key = `${todo.content.toLowerCase()}||${(todo.activeForm ?? "").toLowerCase()}`;
+          allTodos.set(key, todo);
         }
       } catch {
         // Skip invalid files
       }
     }
 
-    return Array.from(allTodos.values());
+    const todosFromFiles = Array.from(allTodos.values());
+    const todosFromSessionLog = readTodosFromSessionLog(sessionId);
+
+    // Session JSONL keeps the latest TodoWrite state and is more reliable when files are stale.
+    if (todosFromSessionLog.length > 0) {
+      return todosFromSessionLog;
+    }
+
+    return todosFromFiles;
   } catch {
-    return [];
+    return readTodosFromSessionLog(sessionId);
   }
+}
+
+function readTodosForSession(sessionId: string): Todo[] {
+  return getCachedSync(`todos-session:${sessionId}`, TODOS_CACHE_TTL, () =>
+    readTodosForSessionUncached(sessionId)
+  );
 }
 
 // Read all todos (for overview) - with caching
