@@ -5,7 +5,6 @@ import { SessionCard } from "./SessionList";
 import { StatsSummary } from "./StatsSummary";
 import { RateLimitBar } from "./RateLimitBar";
 import { ApiUsageSection } from "./ApiUsageSection";
-import { UsageHistoryTab } from "./UsageHistoryTab";
 import { ManualTasksTab } from "./ManualTasksTab";
 import { SettingsModal } from "./SettingsModal";
 import { TitleEditModal } from "./TitleEditModal";
@@ -232,7 +231,7 @@ export function ClaudeMonitor() {
   const [error, setError] = useState<string | null>(null);
   const [codexError, setCodexError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [activeTab, setActiveTab] = useState<"claude" | "codex" | "history" | "manual">("claude");
+  const [activeTab, setActiveTab] = useState<"claude" | "codex" | "manual">("claude");
   const [serverConnected, setServerConnected] = useState(true);
   const [pastCollapsed, setPastCollapsed] = useState(true);
   const [resetTimelineCollapsed, setResetTimelineCollapsed] = useState(true);
@@ -308,7 +307,7 @@ export function ClaudeMonitor() {
       codexTitles: Record<string, string>;
       manualTasks: ManualTask[];
       themePreference: ThemePreference;
-      activeTab: "claude" | "codex" | "history" | "manual";
+      activeTab: "claude" | "codex" | "manual";
       pastCollapsed: boolean;
     }>) =>
       buildSessionStateBackup({
@@ -327,7 +326,7 @@ export function ClaudeMonitor() {
   );
 
   const saveDisplaySettings = useCallback(
-    (nextActiveTab: "claude" | "codex" | "history" | "manual", nextPastCollapsed: boolean) => {
+    (nextActiveTab: "claude" | "codex" | "manual", nextPastCollapsed: boolean) => {
       localStorage.setItem(
         DISPLAY_SETTINGS_STORAGE_KEY,
         JSON.stringify({
@@ -356,13 +355,12 @@ export function ClaudeMonitor() {
     if (savedDisplaySettings) {
       try {
         const parsed = JSON.parse(savedDisplaySettings) as {
-          activeTab?: "claude" | "codex" | "history" | "manual";
+          activeTab?: "claude" | "codex" | "manual";
           pastCollapsed?: boolean;
         };
         if (
           parsed.activeTab === "claude" ||
           parsed.activeTab === "codex" ||
-          parsed.activeTab === "history" ||
           parsed.activeTab === "manual"
         ) {
           setActiveTab(parsed.activeTab);
@@ -931,107 +929,6 @@ export function ClaudeMonitor() {
     };
   }, [codexPeriod, statsData]);
 
-  const mergedUsageHistory = useMemo(() => {
-    const dailyMap = new Map<string, DailyActivity>();
-
-    for (const day of statsData?.dailyActivity ?? []) {
-      const input = day.tokens.inputTokens || 0;
-      const output = day.tokens.outputTokens || 0;
-      const cacheRead = day.tokens.cacheReadTokens || 0;
-      const cacheCreate = day.tokens.cacheCreationTokens || 0;
-
-      dailyMap.set(day.date, {
-        ...day,
-        tokens: {
-          inputTokens: input,
-          outputTokens: output,
-          cacheReadTokens: cacheRead,
-          cacheCreationTokens: cacheCreate,
-          totalTokens: input + output + cacheRead + cacheCreate,
-        },
-      });
-    }
-
-    if (codexData) {
-      for (const session of codexData.sessions) {
-        const modified = new Date(session.modified);
-        if (Number.isNaN(modified.getTime())) {
-          continue;
-        }
-
-        const date = modified.toISOString().split("T")[0];
-        const current = dailyMap.get(date) ?? {
-          date,
-          messageCount: 0,
-          sessionCount: 0,
-          toolCallCount: 0,
-          tokens: {
-            inputTokens: 0,
-            outputTokens: 0,
-            cacheReadTokens: 0,
-            cacheCreationTokens: 0,
-            totalTokens: 0,
-          },
-          cost: 0,
-        };
-
-        const rawInput = session.tokenUsage?.inputTokens ?? 0;
-        const cacheRead = session.tokenUsage?.cachedInputTokens ?? 0;
-        const input = Math.max(0, rawInput - cacheRead);
-        const output = session.tokenUsage?.outputTokens ?? 0;
-        const messageCount = session.userMessageCount + session.agentMessageCount;
-
-        current.messageCount += messageCount;
-        current.sessionCount += 1;
-        current.toolCallCount += session.toolCallCount;
-        current.tokens.inputTokens += input;
-        current.tokens.outputTokens += output;
-        current.tokens.cacheReadTokens += cacheRead;
-        current.tokens.totalTokens += input + output + cacheRead;
-        current.cost += session.estimatedCostUsd || 0;
-
-        dailyMap.set(date, current);
-      }
-    }
-
-    const dailyActivity = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-
-    const monthlyMap = new Map<string, MonthlySummary>();
-    for (const day of dailyActivity) {
-      const monthKey = day.date.slice(0, 7);
-      const current = monthlyMap.get(monthKey) ?? {
-        month: monthKey,
-        cost: 0,
-        days: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreateTokens: 0,
-      };
-
-      current.cost += day.cost;
-      current.days += 1;
-      current.inputTokens += day.tokens.inputTokens;
-      current.outputTokens += day.tokens.outputTokens;
-      current.cacheReadTokens += day.tokens.cacheReadTokens;
-      current.cacheCreateTokens += day.tokens.cacheCreationTokens;
-
-      monthlyMap.set(monthKey, current);
-    }
-
-    const monthlySummary = Array.from(monthlyMap.values())
-      .map((month) => ({
-        ...month,
-        cost: Math.round(month.cost * 100) / 100,
-      }))
-      .sort((a, b) => a.month.localeCompare(b.month));
-
-    return {
-      dailyActivity,
-      monthlySummary,
-    };
-  }, [codexData, statsData]);
-
   const renderUnifiedCard = (item: UnifiedSession) => {
     const isClaude = item.provider === "claude";
     return (
@@ -1096,7 +993,6 @@ export function ClaudeMonitor() {
   const internalTabs = [
     { id: "claude" as const, label: "All Sessions" },
     { id: "codex" as const, label: "Codex Sessions" },
-    { id: "history" as const, label: "Usage History" },
     { id: "manual" as const, label: "Manual Tasks" },
   ];
 
@@ -1184,6 +1080,7 @@ export function ClaudeMonitor() {
           rateSource={rateSource}
           costBreakdown={mergedSummary.costBreakdown}
           messageBreakdown={mergedSummary.messageBreakdown}
+          dailyActivity={statsData?.dailyActivity}
         />
       )}
 
@@ -1338,15 +1235,6 @@ export function ClaudeMonitor() {
 
           {/* Tab Content: Codex Sessions */}
           {activeTab === "codex" && <CodexMonitor />}
-
-          {/* Tab Content: Usage History */}
-          {activeTab === "history" && mergedUsageHistory && (
-            <UsageHistoryTab
-              dailyActivity={mergedUsageHistory.dailyActivity}
-              monthlySummary={mergedUsageHistory.monthlySummary}
-              exchangeRate={exchangeRate}
-            />
-          )}
 
           {/* Tab Content: Manual Tasks */}
           {activeTab === "manual" && (

@@ -3,53 +3,10 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
+import { getPricing } from "@/lib/usage-types";
 
 // Cache TTL - 30 seconds for usage stats (expensive computation)
 const USAGE_STATS_CACHE_TTL = 30000;
-
-// Pricing per 1M tokens
-const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheCreate: number }> = {
-  "claude-opus-4-5-20251101": {
-    input: 15,
-    output: 75,
-    cacheRead: 1.5,
-    cacheCreate: 18.75,
-  },
-  "claude-sonnet-4-5-20250929": {
-    input: 3,
-    output: 15,
-    cacheRead: 0.3,
-    cacheCreate: 3.75,
-  },
-  "claude-haiku-4-5-20251001": {
-    input: 0.8,
-    output: 4,
-    cacheRead: 0.08,
-    cacheCreate: 1,
-  },
-  "<synthetic>": {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheCreate: 0,
-  },
-};
-
-// Get pricing for a model (with fallback logic)
-function getPricing(model: string) {
-  if (MODEL_PRICING[model]) {
-    return MODEL_PRICING[model];
-  }
-  // Fallback based on model type
-  if (model.includes("opus")) {
-    return MODEL_PRICING["claude-opus-4-5-20251101"];
-  }
-  if (model.includes("haiku")) {
-    return MODEL_PRICING["claude-haiku-4-5-20251001"];
-  }
-  // Default to Sonnet pricing
-  return MODEL_PRICING["claude-sonnet-4-5-20250929"];
-}
 
 interface TokenUsage {
   inputTokens: number;

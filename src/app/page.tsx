@@ -1,23 +1,48 @@
-﻿"use client";
+"use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+import { motion, AnimatePresence } from "framer-motion";
 import { CategoryChart } from "@/components/CategoryChart";
 import { TechChart } from "@/components/TechChart";
-import { RelationshipGraph } from "@/components/RelationshipGraph";
 import { ProjectTable } from "@/components/ProjectTable";
 import { DetailPanel } from "@/components/DetailPanel";
 import ExportButton from "@/components/ExportButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { CommandPalette, SearchTrigger } from "@/components/CommandPalette";
 import { FavoritesFilter, useFavorites } from "@/components/FavoriteButton";
-import { UsageStats } from "@/components/UsageStats";
-import { ClaudeMonitor } from "@/components/claude/ClaudeMonitor";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { LoadingSkeleton } from "@/components/ui/LoadingSkeleton";
+import { StaggerContainer, StaggerItem } from "@/components/ui/AnimatedCard";
 import projectData from "@/lib/projects.json";
 import { Project, ProjectData } from "@/lib/types";
+
+/** Dynamically imported heavy components for code splitting */
+const ClaudeMonitor = dynamic(
+  () => import("@/components/claude/ClaudeMonitor").then((m) => ({ default: m.ClaudeMonitor })),
+  { loading: () => <LoadingSkeleton type="monitor" />, ssr: false }
+);
+
+const RelationshipGraph = dynamic(
+  () => import("@/components/RelationshipGraph").then((m) => ({ default: m.RelationshipGraph })),
+  { loading: () => <LoadingSkeleton type="graph" />, ssr: false }
+);
+
+const UsageStats = dynamic(
+  () => import("@/components/UsageStats").then((m) => ({ default: m.UsageStats })),
+  { loading: () => <LoadingSkeleton type="stats" />, ssr: false }
+);
 
 const initialData = projectData as ProjectData;
 
 type Tab = "claude" | "overview" | "graph" | "usage";
+
+const tabMotion = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.1 },
+};
 
 export default function Home() {
   const [data, setData] = useState<ProjectData>(initialData);
@@ -27,6 +52,10 @@ export default function Home() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [, setCommandPaletteOpen] = useState(false);
+
+  // Tab indicator animation refs
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
 
   const { favorites, toggleFavorite, mounted: favoritesMounted } = useFavorites();
 
@@ -40,16 +69,10 @@ export default function Home() {
           cache: "no-store",
           signal: controller.signal,
         });
-        if (!response.ok) {
-          return;
-        }
+        if (!response.ok) return;
         const payload = (await response.json()) as Partial<ProjectData>;
-        if (!isMounted) {
-          return;
-        }
-        if (!payload.projects || !payload.categories || !payload.technologies) {
-          return;
-        }
+        if (!isMounted) return;
+        if (!payload.projects || !payload.categories || !payload.technologies) return;
         setData(payload as ProjectData);
       } catch {
         // Keep static fallback when auto-discovery fails.
@@ -57,12 +80,23 @@ export default function Home() {
     };
 
     void loadProjectCatalog();
-
     return () => {
       isMounted = false;
       controller.abort();
     };
   }, []);
+
+  // Update tab indicator position
+  useEffect(() => {
+    if (!tabsRef.current) return;
+    const activeButton = tabsRef.current.querySelector(`[data-tab="${activeTab}"]`) as HTMLElement;
+    if (activeButton) {
+      setIndicatorStyle({
+        left: activeButton.offsetLeft,
+        width: activeButton.offsetWidth,
+      });
+    }
+  }, [activeTab]);
 
   const filteredByFavorites = useMemo(() => {
     if (!showFavoritesOnly) return data.projects;
@@ -103,10 +137,11 @@ export default function Home() {
         onSelectProject={handleProjectClick}
       />
 
-      <header className="bg-white dark:bg-gray-800 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-start">
+      {/* Header with glassmorphism */}
+      <header className="glass-card border-0 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 py-5 flex justify-between items-start">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
               Project Portfolio Dashboard
             </h1>
           </div>
@@ -119,30 +154,23 @@ export default function Home() {
       </header>
 
       {activeTab !== "claude" && (
-        <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
+        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b dark:border-gray-700">
           <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <StaggerContainer className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap gap-6">
-                <div className="flex items-center gap-2">
-                  <span className="text-3xl font-bold text-blue-600">{data.projects.length}</span>
-                  <span className="text-gray-500">プロジェクト</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-3xl font-bold text-green-600">
-                    {data.projects.filter((p) => p.status === "active").length}
-                  </span>
-                  <span className="text-gray-500">アクティブ</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-3xl font-bold text-purple-600">{Object.keys(data.categories).length}</span>
-                  <span className="text-gray-500">カテゴリ</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-3xl font-bold text-orange-600">
-                    {new Set(data.projects.flatMap((p) => p.technologies)).size}
-                  </span>
-                  <span className="text-gray-500">技術</span>
-                </div>
+                {[
+                  { value: data.projects.length, label: "プロジェクト", color: "text-blue-600" },
+                  { value: data.projects.filter((p) => p.status === "active").length, label: "アクティブ", color: "text-green-600" },
+                  { value: Object.keys(data.categories).length, label: "カテゴリ", color: "text-purple-600" },
+                  { value: new Set(data.projects.flatMap((p) => p.technologies)).size, label: "技術", color: "text-orange-600" },
+                ].map((stat) => (
+                  <StaggerItem key={stat.label}>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-3xl font-bold ${stat.color} animate-count-up`}>{stat.value}</span>
+                      <span className="text-gray-500">{stat.label}</span>
+                    </div>
+                  </StaggerItem>
+                ))}
               </div>
               {favoritesMounted && (
                 <FavoritesFilter
@@ -151,27 +179,34 @@ export default function Home() {
                   favoritesCount={favorites.size}
                 />
               )}
-            </div>
+            </StaggerContainer>
           </div>
         </div>
       )}
 
+      {/* Tab navigation with animated indicator */}
       <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4">
-          <nav className="flex gap-1">
+          <nav ref={tabsRef} className="flex gap-1 relative">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
+                data-tab={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
+                className={`px-4 py-3 font-medium text-sm transition-colors relative z-10 ${
                   activeTab === tab.id
-                    ? "border-blue-500 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    ? "text-blue-600"
+                    : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 }`}
               >
                 {tab.label}
               </button>
             ))}
+            {/* Animated underline */}
+            <div
+              className="absolute bottom-0 h-0.5 bg-blue-500 tab-indicator rounded-full"
+              style={{ left: indicatorStyle.left, width: indicatorStyle.width }}
+            />
           </nav>
         </div>
       </div>
@@ -186,70 +221,74 @@ export default function Home() {
                 style={{ backgroundColor: data.categories[selectedCategory]?.color }}
               >
                 {data.categories[selectedCategory]?.name}
-                <button
-                  onClick={() => setSelectedCategory(null)}
-                  className="hover:bg-white/20 rounded-full p-0.5"
-                >
-                  ×
-                </button>
+                <button onClick={() => setSelectedCategory(null)} className="hover:bg-white/20 rounded-full p-0.5">×</button>
               </span>
             )}
             {selectedTech && (
               <span className="px-2 py-1 rounded text-xs bg-blue-500 text-white flex items-center gap-1">
                 {selectedTech}
-                <button
-                  onClick={() => setSelectedTech(null)}
-                  className="hover:bg-white/20 rounded-full p-0.5"
-                >
-                  ×
-                </button>
+                <button onClick={() => setSelectedTech(null)} className="hover:bg-white/20 rounded-full p-0.5">×</button>
               </span>
             )}
-            <button
-              onClick={clearFilters}
-              className="text-xs text-blue-600 hover:underline ml-2"
-            >
-              クリア
-            </button>
+            <button onClick={clearFilters} className="text-xs text-blue-600 hover:underline ml-2">クリア</button>
           </div>
         </div>
       )}
 
       <main id="main-content" className="max-w-7xl mx-auto px-4 py-6">
-        {/* ClaudeMonitor: always mounted, hidden via CSS to preserve state */}
-        <div className={activeTab === "claude" ? "" : "hidden"}>
-          <ClaudeMonitor />
-        </div>
+        <AnimatePresence mode="popLayout">
+          {activeTab === "claude" && (
+            <motion.div key="claude" {...tabMotion}>
+              <ErrorBoundary>
+                <ClaudeMonitor />
+              </ErrorBoundary>
+            </motion.div>
+          )}
 
-        {activeTab === "overview" && (
-          <div className="space-y-6">
-            <CategoryChart
-              projects={filteredByFavorites}
-              categories={data.categories}
-              onCategoryClick={handleCategoryClick}
-            />
-            <TechChart projects={filteredByFavorites} onTechClick={handleTechClick} />
-            <ProjectTable
-              projects={filteredByFavorites}
-              categories={data.categories}
-              selectedCategory={selectedCategory}
-              selectedTech={selectedTech}
-              onProjectClick={handleProjectClick}
-              favorites={favorites}
-              onToggleFavorite={toggleFavorite}
-            />
-          </div>
-        )}
+          {activeTab === "overview" && (
+            <motion.div key="overview" {...tabMotion}>
+              <ErrorBoundary>
+                <div className="space-y-6">
+                  <CategoryChart
+                    projects={filteredByFavorites}
+                    categories={data.categories}
+                    onCategoryClick={handleCategoryClick}
+                  />
+                  <TechChart projects={filteredByFavorites} onTechClick={handleTechClick} />
+                  <ProjectTable
+                    projects={filteredByFavorites}
+                    categories={data.categories}
+                    selectedCategory={selectedCategory}
+                    selectedTech={selectedTech}
+                    onProjectClick={handleProjectClick}
+                    favorites={favorites}
+                    onToggleFavorite={toggleFavorite}
+                  />
+                </div>
+              </ErrorBoundary>
+            </motion.div>
+          )}
 
-        {activeTab === "graph" && (
-          <RelationshipGraph
-            projects={filteredByFavorites}
-            categories={data.categories}
-            onProjectClick={handleProjectClick}
-          />
-        )}
+          {activeTab === "graph" && (
+            <motion.div key="graph" {...tabMotion}>
+              <ErrorBoundary>
+                <RelationshipGraph
+                  projects={filteredByFavorites}
+                  categories={data.categories}
+                  onProjectClick={handleProjectClick}
+                />
+              </ErrorBoundary>
+            </motion.div>
+          )}
 
-        {activeTab === "usage" && <UsageStats />}
+          {activeTab === "usage" && (
+            <motion.div key="usage" {...tabMotion}>
+              <ErrorBoundary>
+                <UsageStats />
+              </ErrorBoundary>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       <DetailPanel

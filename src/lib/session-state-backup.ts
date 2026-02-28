@@ -4,7 +4,7 @@ import {
   parseTitleBackup,
 } from "./custom-title-storage";
 
-export type ActiveTab = "claude" | "codex" | "history" | "manual";
+export type ActiveTab = "claude" | "codex" | "manual";
 export type ThemePreference = "light" | "dark" | "system" | null;
 
 export interface BackupManualTask {
@@ -36,7 +36,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeActiveTab(value: unknown): ActiveTab {
-  if (value === "claude" || value === "codex" || value === "history" || value === "manual") {
+  if (value === "claude" || value === "codex" || value === "manual") {
     return value;
   }
   return "claude";

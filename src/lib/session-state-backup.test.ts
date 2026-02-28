@@ -24,7 +24,7 @@ test("parseSessionStateBackup parses v2 payload", () => {
     ],
     themePreference: "dark",
     displaySettings: {
-      activeTab: "history",
+      activeTab: "codex",
       pastCollapsed: false,
     },
   });
@@ -36,7 +36,7 @@ test("parseSessionStateBackup parses v2 payload", () => {
   assert.equal(parsed.codexTitles["codex:b"], "B");
   assert.equal(parsed.manualTasks.length, 1);
   assert.equal(parsed.themePreference, "dark");
-  assert.equal(parsed.displaySettings.activeTab, "history");
+  assert.equal(parsed.displaySettings.activeTab, "codex");
 });
 
 test("parseSessionStateBackup supports v1 title-only backup", () => {

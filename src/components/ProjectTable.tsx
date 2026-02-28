@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, memo } from "react";
 import { Project, Categories } from "@/lib/types";
 import { FavoriteButton } from "@/components/FavoriteButton";
 
@@ -23,7 +23,7 @@ interface ProjectTableProps {
   onToggleFavorite?: (projectId: string) => void;
 }
 
-export function ProjectTable({
+export const ProjectTable = memo(function ProjectTable({
   projects,
   categories,
   selectedCategory,
@@ -328,4 +328,4 @@ export function ProjectTable({
       )}
     </div>
   );
-}
+});

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 
 interface TokenUsage {
   inputTokens: number;
@@ -52,7 +52,7 @@ interface SessionCardProps {
   borderClassName?: string;
 }
 
-export function SessionCard({
+export const SessionCard = memo(function SessionCard({
   session,
   exchangeRate,
   customTitle,
@@ -219,9 +219,9 @@ export function SessionCard({
       )}
     </div>
   );
-}
+});
 
-export function SessionList({ grouped, exchangeRate, customTitles, onTitleEdit, onSessionClick }: SessionListProps) {
+export const SessionList = memo(function SessionList({ grouped, exchangeRate, customTitles, onTitleEdit, onSessionClick }: SessionListProps) {
   const [pastCollapsed, setPastCollapsed] = useState(true);
 
   return (
@@ -296,4 +296,4 @@ export function SessionList({ grouped, exchangeRate, customTitles, onTitleEdit, 
       </section>
     </>
   );
-}
+});

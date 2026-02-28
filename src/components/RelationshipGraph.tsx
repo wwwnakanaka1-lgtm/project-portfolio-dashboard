@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import * as d3 from "d3";
+import { select } from "d3-selection";
+import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, type SimulationNodeDatum, type SimulationLinkDatum } from "d3-force";
+import { zoom } from "d3-zoom";
+import { drag } from "d3-drag";
 import { Project, Categories } from "@/lib/types";
 
 interface RelationshipGraphProps {
@@ -10,7 +13,7 @@ interface RelationshipGraphProps {
   onProjectClick?: (project: Project) => void;
 }
 
-interface Node extends d3.SimulationNodeDatum {
+interface Node extends SimulationNodeDatum {
   id: string;
   name: string;
   category: string;
@@ -18,7 +21,7 @@ interface Node extends d3.SimulationNodeDatum {
   technologies: string[];
 }
 
-interface Link extends d3.SimulationLinkDatum<Node> {
+interface Link extends SimulationLinkDatum<Node> {
   source: string | Node;
   target: string | Node;
   strength: number;
@@ -35,7 +38,7 @@ export function RelationshipGraph({
   useEffect(() => {
     if (!svgRef.current || projects.length === 0) return;
 
-    const svg = d3.select(svgRef.current);
+    const svg = select(svgRef.current);
     svg.selectAll("*").remove();
 
     const width = svgRef.current.clientWidth;
@@ -70,30 +73,27 @@ export function RelationshipGraph({
     }
 
     // Create simulation
-    const simulation = d3
-      .forceSimulation(nodes)
+    const simulation = forceSimulation(nodes)
       .force(
         "link",
-        d3
-          .forceLink<Node, Link>(links)
+        forceLink<Node, Link>(links)
           .id((d) => d.id)
           .distance(100)
       )
-      .force("charge", d3.forceManyBody().strength(-200))
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(40));
+      .force("charge", forceManyBody().strength(-200))
+      .force("center", forceCenter(width / 2, height / 2))
+      .force("collision", forceCollide().radius(40));
 
     // Create container with zoom
     const container = svg.append("g");
 
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
+    const zoomBehavior = zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.3, 3])
       .on("zoom", (event) => {
         container.attr("transform", event.transform);
       });
 
-    svg.call(zoom);
+    svg.call(zoomBehavior);
 
     // Draw links
     const link = container
@@ -114,8 +114,7 @@ export function RelationshipGraph({
       .attr("cursor", "pointer");
 
     // Add drag behavior
-    const dragBehavior = d3
-      .drag<SVGGElement, Node>()
+    const dragBehavior = drag<SVGGElement, Node>()
       .on("start", (event, d) => {
         if (!event.active) simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
@@ -140,12 +139,12 @@ export function RelationshipGraph({
       .attr("fill", (d) => d.color)
       .attr("stroke", "#fff")
       .attr("stroke-width", 2)
-      .on("mouseover", function (event, d) {
-        d3.select(this).attr("r", 25);
+      .on("mouseover", function (_event, d) {
+        select(this).attr("r", 25);
         setHoveredNode(d.id);
       })
       .on("mouseout", function () {
-        d3.select(this).attr("r", 20);
+        select(this).attr("r", 20);
         setHoveredNode(null);
       })
       .on("click", (event, d) => {

@@ -3,25 +3,10 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
+import { calculateCost as calculateCostFromPricing } from "@/lib/usage-types";
 
 // Cache TTL - 60 seconds for project costs (expensive computation)
 const PROJECT_COSTS_CACHE_TTL = 60000;
-
-// Pricing per 1M tokens
-const MODEL_PRICING = {
-  "claude-opus-4-5-20251101": {
-    input: 15,
-    output: 75,
-    cacheRead: 1.5,
-    cacheCreate: 18.75,
-  },
-  "claude-sonnet-4-5-20250929": {
-    input: 3,
-    output: 15,
-    cacheRead: 0.3,
-    cacheCreate: 3.75,
-  },
-} as const;
 
 interface TokenUsage {
   inputTokens: number;
@@ -119,15 +104,9 @@ function getSessionTokenUsage(jsonlPath: string): { usage: TokenUsage; lastModif
   }
 }
 
-// Calculate cost from token usage
+// Calculate cost from token usage using centralized pricing
 function calculateCost(usage: TokenUsage): number {
-  const pricing = MODEL_PRICING["claude-opus-4-5-20251101"];
-  const cost =
-    (usage.inputTokens / 1_000_000) * pricing.input +
-    (usage.outputTokens / 1_000_000) * pricing.output +
-    (usage.cacheReadTokens / 1_000_000) * pricing.cacheRead +
-    (usage.cacheCreationTokens / 1_000_000) * pricing.cacheCreate;
-  return cost;
+  return calculateCostFromPricing(usage);
 }
 
 // Extract project name from session's firstPrompt or working directory

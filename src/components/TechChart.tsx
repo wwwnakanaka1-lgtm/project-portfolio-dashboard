@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import {
   BarChart,
   Bar,
@@ -34,7 +34,7 @@ const TECH_COLORS: Record<string, string> = {
   yfinance: "#10B981",
 };
 
-export function TechChart({ projects, onTechClick }: TechChartProps) {
+export const TechChart = memo(function TechChart({ projects, onTechClick }: TechChartProps) {
   const techData = useMemo(() => {
     const counts: Record<string, number> = {};
     projects.forEach((p) => {
@@ -103,4 +103,4 @@ export function TechChart({ projects, onTechClick }: TechChartProps) {
       </div>
     </div>
   );
-}
+});

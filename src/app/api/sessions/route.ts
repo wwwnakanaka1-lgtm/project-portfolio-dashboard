@@ -3,27 +3,12 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
+import { calculateCost as calculateCostFromPricing } from "@/lib/usage-types";
 
 // Cache TTLs
 const SESSIONS_CACHE_TTL = 5000; // 5 seconds for main session data
 const UNINDEXED_CACHE_TTL = 60000; // 60 seconds for unindexed session scan (expensive)
 const TOKEN_USAGE_CACHE_TTL = 30000; // 30 seconds for token usage per file
-
-// Pricing per 1M tokens
-const MODEL_PRICING = {
-  "claude-opus-4-5-20251101": {
-    input: 15,
-    output: 75,
-    cacheRead: 1.5,
-    cacheCreate: 18.75,
-  },
-  "claude-sonnet-4-5-20250929": {
-    input: 3,
-    output: 15,
-    cacheRead: 0.3,
-    cacheCreate: 3.75,
-  },
-} as const;
 
 interface TokenUsage {
   inputTokens: number;
@@ -117,16 +102,9 @@ function getSessionTokenUsage(jsonlPath: string): TokenUsage | null {
   }
 }
 
-// Calculate estimated cost (USD)
+// Calculate estimated cost (USD) using centralized pricing
 function calculateCost(tokens: TokenUsage, model: string = "claude-opus-4-5-20251101"): number {
-  const pricing = MODEL_PRICING[model as keyof typeof MODEL_PRICING] || MODEL_PRICING["claude-opus-4-5-20251101"];
-
-  const inputCost = (tokens.inputTokens / 1e6) * pricing.input;
-  const outputCost = (tokens.outputTokens / 1e6) * pricing.output;
-  const cacheReadCost = (tokens.cacheReadTokens / 1e6) * pricing.cacheRead;
-  const cacheCreateCost = (tokens.cacheCreationTokens / 1e6) * pricing.cacheCreate;
-
-  return inputCost + outputCost + cacheReadCost + cacheCreateCost;
+  return calculateCostFromPricing(tokens, model);
 }
 
 // Find unindexed sessions (directories with JSONL that aren't in sessions-index.json)

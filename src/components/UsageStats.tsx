@@ -11,6 +11,8 @@ import {
   CartesianGrid,
 } from "recharts";
 import { getExchangeRate } from "@/lib/exchange-rate";
+import { CostAnomalyAlert } from "@/components/CostAnomalyAlert";
+import { getPricing } from "@/lib/usage-types";
 
 const FALLBACK_RATE = 150;
 
@@ -27,6 +29,7 @@ interface DailyActivity {
   messageCount: number;
   sessionCount: number;
   toolCallCount: number;
+  cost: number;
 }
 
 interface MonthlySummary {
@@ -119,13 +122,23 @@ export function UsageStats() {
     tools: d.toolCallCount,
   }));
 
-  const modelEntries = Object.entries(data.modelUsage).sort((a, b) => b[1].cost - a[1].cost);
+  const modelEntries = Object.entries(data.modelUsage)
+    .filter(([model]) => model !== "<synthetic>")
+    .sort((a, b) => b[1].cost - a[1].cost);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <div className="glass-card rounded-xl p-6">
       <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
         Claude Code 使用量・コスト
       </h2>
+
+      {/* Cost Anomaly Alerts */}
+      {data.dailyActivity && data.dailyActivity.length > 7 && (
+        <CostAnomalyAlert
+          dailyActivity={data.dailyActivity}
+          exchangeRate={exchangeRate}
+        />
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -157,7 +170,9 @@ export function UsageStats() {
           {modelEntries.map(([model, usage]) => {
             // Determine model name from model ID
             let modelName: string;
-            if (model.includes("opus")) {
+            if (model.includes("opus-4-6")) {
+              modelName = "Opus 4.6";
+            } else if (model.includes("opus")) {
               modelName = "Opus 4.5";
             } else if (model.includes("sonnet")) {
               modelName = "Sonnet 4.5";
@@ -171,15 +186,7 @@ export function UsageStats() {
             const percentage = (usage.cost / data.totalCost) * 100;
 
             // Calculate individual costs based on model type
-            let pricing: { input: number; output: number; cacheRead: number; cacheCreate: number };
-            if (model.includes("opus")) {
-              pricing = { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 };
-            } else if (model.includes("haiku")) {
-              pricing = { input: 0.8, output: 4, cacheRead: 0.08, cacheCreate: 1 };
-            } else {
-              // Sonnet pricing as default
-              pricing = { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 };
-            }
+            const pricing = getPricing(model);
 
             const inputCost = (usage.inputTokens / 1e6) * pricing.input;
             const outputCost = (usage.outputTokens / 1e6) * pricing.output;
@@ -229,50 +236,8 @@ export function UsageStats() {
         </div>
       </div>
 
-      {/* Monthly Cost Chart */}
-      {data.monthlySummary && data.monthlySummary.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">
-            月別コスト推移
-          </h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.monthlySummary.slice(-12).map((m) => ({
-                month: m.month.replace(/^\d{4}-/, (y) => "").replace(/^0/, ""),
-                label: `${m.month.split("-")[0]}年${parseInt(m.month.split("-")[1])}月`,
-                cost: m.cost,
-                costJPY: Math.round(m.cost * exchangeRate),
-                days: m.days,
-              }))}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis
-                  dataKey="month"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => `${v}月`}
-                />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  tickFormatter={(v) => `$${v}`}
-                />
-                <Tooltip
-                  formatter={(value, name) => {
-                    const v = Number(value);
-                    if (name === "cost") {
-                      return [`$${v.toFixed(2)} (¥${Math.round(v * exchangeRate).toLocaleString()})`, "コスト"];
-                    }
-                    return [v, name];
-                  }}
-                  labelFormatter={(label) => `${label}月`}
-                />
-                <Bar dataKey="cost" fill="#10B981" name="cost" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
       {/* Activity Chart */}
-      <div>
+      <div className="mb-6">
         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">
           最近のアクティビティ
         </h3>
@@ -294,6 +259,40 @@ export function UsageStats() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Monthly Cost Chart */}
+      {data.monthlySummary && data.monthlySummary.length > 0 && (() => {
+        const last12 = data.monthlySummary.slice(-12);
+        const maxCost = Math.max(...last12.map((m) => m.cost), 1);
+        return (
+        <div>
+          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">
+            月別コスト推移
+          </h3>
+          <div className="flex items-end justify-around gap-2 h-56">
+            {last12.map((month) => {
+              const height = Math.max(10, (month.cost / maxCost) * 180);
+              const [, mm] = month.month.split("-");
+              return (
+                <div key={month.month} className="flex flex-col items-center">
+                  <div
+                    className="w-8 bg-green-500 rounded-t transition-all duration-300 relative group cursor-pointer"
+                    style={{ height: `${height}px` }}
+                    title={`${month.month}: $${month.cost.toFixed(2)} (¥${Math.round(month.cost * exchangeRate).toLocaleString()})`}
+                  >
+                    <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                      ${month.cost.toFixed(0)}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{parseInt(mm)}月</span>
+                  <span className="text-xs text-green-600 dark:text-green-400">¥{Math.round(month.cost * exchangeRate).toLocaleString()}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        );
+      })()}
 
       {/* Footer */}
       <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">

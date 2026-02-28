@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import {
   BarChart,
   Bar,
@@ -21,7 +21,7 @@ interface CategoryChartProps {
   onCategoryClick?: (category: string) => void;
 }
 
-export function CategoryChart({
+export const CategoryChart = memo(function CategoryChart({
   projects,
   categories,
   onCategoryClick,
@@ -121,4 +121,4 @@ export function CategoryChart({
       </div>
     </div>
   );
-}
+});
