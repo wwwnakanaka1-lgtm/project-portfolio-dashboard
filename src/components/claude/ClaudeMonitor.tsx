@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, type ChangeEvent } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { SessionCard } from "./SessionList";
 import { StatsSummary } from "./StatsSummary";
 import { RateLimitBar } from "./RateLimitBar";
@@ -11,7 +12,7 @@ import { TitleEditModal } from "./TitleEditModal";
 import { SessionDetailModal } from "./SessionDetailModal";
 import { TaskModal } from "./TaskModal";
 import { ServerStatus } from "./ServerStatus";
-import { getExchangeRate } from "@/lib/exchange-rate";
+import { useExchangeRate } from "@/hooks/useExchangeRate";
 import {
   CLAUDE_CUSTOM_TITLES_STORAGE_KEY,
   CLAUDE_CUSTOM_TITLES_UPDATED_EVENT,
@@ -208,8 +209,11 @@ interface PeriodCost {
   todayMessages: number;
 }
 
-const FALLBACK_RATE = 150;
-const REFRESH_INTERVAL = 10000;
+// Tiered refresh intervals (ms) — not all data needs the same frequency
+const FAST_REFRESH_MS = 15_000;   // sessions, plan-usage
+const MEDIUM_REFRESH_MS = 60_000; // codex-sessions, todos
+const SLOW_REFRESH_MS = 300_000;  // usage-stats, config
+
 const DISPLAY_SETTINGS_STORAGE_KEY = "dashboard-display-settings";
 const AUTO_BACKUP_DEBOUNCE_MS = 1200;
 
@@ -223,10 +227,12 @@ export function ClaudeMonitor() {
   const [apiUsageData, setApiUsageData] = useState<ApiUsageData | null>(null);
   const [planUsageData, setPlanUsageData] = useState<PlanUsageData | null>(null);
   const [manualTasks, setManualTasks] = useState<ManualTask[]>([]);
+  const [todosMap, setTodosMap] = useState<Record<string, { content: string; status: "pending" | "in_progress" | "completed" }[]>>({});
+
+  // Exchange rate (shared hook — eliminates duplicate fetch in UsageStats/ProjectTable)
+  const { exchangeRate, rateSource } = useExchangeRate();
 
   // UI states
-  const [exchangeRate, setExchangeRate] = useState(FALLBACK_RATE);
-  const [rateSource, setRateSource] = useState<"api" | "fallback">("fallback");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [codexError, setCodexError] = useState<string | null>(null);
@@ -260,6 +266,7 @@ export function ClaudeMonitor() {
   const autoBackupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStateInitializedRef = useRef(false);
   const lastAutoBackupFingerprintRef = useRef<string>("");
+  const pastScrollRef = useRef<HTMLDivElement>(null);
 
   const loadAndHydrateTitles = useCallback((options?: { dispatchEvent?: boolean }) => {
     const rawClaudeTitles = parseTitleMap(localStorage.getItem(CLAUDE_CUSTOM_TITLES_STORAGE_KEY));
@@ -522,71 +529,149 @@ export function ClaudeMonitor() {
     }
   }, [buildCurrentStateBackup, dismissedRestoreFingerprint]);
 
-  // Fetch data
-  const fetchData = useCallback(async () => {
+  // Track when each endpoint group was last fetched
+  const lastFetchRef = useRef({
+    sessions: 0,
+    usageStats: 0,
+    config: 0,
+    codexSessions: 0,
+    planUsage: 0,
+    todos: 0,
+    rateLimit: 0,
+    apiUsage: 0,
+  });
+
+  // Helper to apply fetched data to state
+  const applySessionsData = useCallback(async (res: Response) => {
+    if (!res.ok) throw new Error("Failed to fetch sessions");
+    const sessions = await res.json();
+    setSessionsData(sessions);
+  }, []);
+
+  const applyStatsData = useCallback(async (res: Response) => {
+    if (!res.ok) throw new Error("Failed to fetch stats");
+    const stats = await res.json();
+    setStatsData(stats);
+  }, []);
+
+  const applyCodexData = useCallback(async (res: Response) => {
+    if (res.ok) {
+      const codex = (await res.json()) as CodexSessionsData;
+      setCodexData(codex);
+      setCodexError(null);
+    } else {
+      setCodexData(null);
+      setCodexError("Failed to fetch Codex sessions");
+    }
+  }, []);
+
+  const applyPlanUsageData = useCallback(async (res: Response) => {
+    if (res.ok) {
+      const planUsage = (await res.json()) as PlanUsageData;
+      setPlanUsageData(planUsage);
+    } else {
+      setPlanUsageData(null);
+    }
+  }, []);
+
+  const applyTodosData = useCallback(async (res: Response) => {
+    if (!res.ok) return;
     try {
-      const [sessionsRes, statsRes, configRes, codexRes, planUsageRes] = await Promise.all([
-        fetch("/api/sessions"),
-        fetch("/api/usage-stats"),
-        fetch("/api/config"),
-        fetch("/api/codex-sessions"),
-        fetch("/api/plan-usage"),
-      ]);
+      const todosData = await res.json();
+      const map: Record<string, { content: string; status: "pending" | "in_progress" | "completed" }[]> = {};
+      for (const s of todosData.sessions ?? []) {
+        if (s.sessionId && Array.isArray(s.todos)) {
+          map[s.sessionId] = s.todos;
+        }
+      }
+      setTodosMap(map);
+    } catch {
+      // Ignore todos batch errors
+    }
+  }, []);
 
-      if (!sessionsRes.ok) throw new Error("Failed to fetch sessions");
-      if (!statsRes.ok) throw new Error("Failed to fetch stats");
+  // Tiered fetch: only fetch endpoints whose refresh interval has elapsed
+  const fetchTiered = useCallback(async (forceAll = false) => {
+    try {
+      const now = Date.now();
+      const last = lastFetchRef.current;
+      const fetches: Promise<void>[] = [];
 
-      const sessions = await sessionsRes.json();
-      const stats = await statsRes.json();
-      const config = configRes.ok ? await configRes.json() : null;
-      if (codexRes.ok) {
-        const codex = (await codexRes.json()) as CodexSessionsData;
-        setCodexData(codex);
-        setCodexError(null);
-      } else {
-        setCodexData(null);
-        setCodexError("Failed to fetch Codex sessions");
+      // Fast tier: sessions + plan-usage (15s)
+      if (forceAll || now - last.sessions >= FAST_REFRESH_MS) {
+        fetches.push(
+          fetch("/api/sessions").then((r) => applySessionsData(r)).then(() => { lastFetchRef.current.sessions = Date.now(); })
+        );
+      }
+      if (forceAll || now - last.planUsage >= FAST_REFRESH_MS) {
+        fetches.push(
+          fetch("/api/plan-usage").then((r) => applyPlanUsageData(r)).then(() => { lastFetchRef.current.planUsage = Date.now(); })
+        );
       }
 
-      if (planUsageRes.ok) {
-        const planUsage = (await planUsageRes.json()) as PlanUsageData;
-        setPlanUsageData(planUsage);
-      } else {
-        setPlanUsageData(null);
+      // Medium tier: codex-sessions + todos (60s)
+      if (forceAll || now - last.codexSessions >= MEDIUM_REFRESH_MS) {
+        fetches.push(
+          fetch("/api/codex-sessions").then((r) => applyCodexData(r)).then(() => { lastFetchRef.current.codexSessions = Date.now(); })
+        );
+      }
+      if (forceAll || now - last.todos >= MEDIUM_REFRESH_MS) {
+        fetches.push(
+          fetch("/api/todos").then((r) => applyTodosData(r)).then(() => { lastFetchRef.current.todos = Date.now(); })
+        );
       }
 
-      setSessionsData(sessions);
-      setStatsData(stats);
-      if (config) setConfigData(config);
+      // Slow tier: usage-stats + config (5min)
+      if (forceAll || now - last.usageStats >= SLOW_REFRESH_MS) {
+        fetches.push(
+          fetch("/api/usage-stats").then((r) => applyStatsData(r)).then(() => { lastFetchRef.current.usageStats = Date.now(); })
+        );
+      }
+      if (forceAll || now - last.config >= SLOW_REFRESH_MS) {
+        fetches.push(
+          fetch("/api/config").then(async (r) => {
+            if (r.ok) {
+              const config = await r.json();
+              setConfigData(config);
+              lastFetchRef.current.config = Date.now();
+            }
+          })
+        );
+      }
+
+      await Promise.all(fetches);
 
       setLastRefresh(new Date());
       setError(null);
       setServerConnected(true);
 
-      // Fetch API-based data if key is configured
-      if (config?.hasApiKey) {
+      // Fetch API-based data if key is configured (on fast tier)
+      const config = configData;
+      if (config?.hasApiKey && (forceAll || now - last.rateLimit >= FAST_REFRESH_MS)) {
         try {
           const rateLimitRes = await fetch("/api/anthropic/ratelimit");
           if (rateLimitRes.ok) {
             const rl = await rateLimitRes.json();
             if (!rl.error) setRateLimitData(rl);
           }
+          lastFetchRef.current.rateLimit = Date.now();
         } catch {
           // Ignore rate limit fetch errors
         }
 
-        if (config.keyType === "admin") {
+        if (config.keyType === "admin" && (forceAll || now - last.apiUsage >= SLOW_REFRESH_MS)) {
           try {
             const usageRes = await fetch("/api/anthropic/usage");
             if (usageRes.ok) {
               const usage = await usageRes.json();
               if (!usage.error) setApiUsageData(usage);
             }
+            lastFetchRef.current.apiUsage = Date.now();
           } catch {
             // Ignore usage fetch errors
           }
         }
-      } else {
+      } else if (!config?.hasApiKey) {
         setRateLimitData(null);
         setApiUsageData(null);
       }
@@ -596,38 +681,45 @@ export function ClaudeMonitor() {
     } finally {
       setLoading(false);
     }
+  }, [configData, applySessionsData, applyStatsData, applyCodexData, applyPlanUsageData, applyTodosData]);
+
+  // Initial load — fetch everything
+  useEffect(() => {
+    fetchTiered(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Initial load
+  // Auto refresh (15s tick, each endpoint fetched at its own interval)
   useEffect(() => {
-    getExchangeRate().then((result) => {
-      setExchangeRate(result.rate);
-      setRateSource(result.source);
-    });
-    fetchData();
-  }, [fetchData]);
-
-  // Auto refresh
-  useEffect(() => {
-    const interval = setInterval(fetchData, REFRESH_INTERVAL);
+    const interval = setInterval(() => fetchTiered(false), FAST_REFRESH_MS);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchTiered]);
 
-  // Visibility change handler
+  // Visibility change handler (only fast tier on tab return)
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        fetchData();
+        if (debounceTimer) clearTimeout(debounceTimer);
+        // Reset fast tier timers to force immediate re-fetch on tab return
+        debounceTimer = setTimeout(() => {
+          lastFetchRef.current.sessions = 0;
+          lastFetchRef.current.planUsage = 0;
+          fetchTiered(false);
+        }, 300);
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [fetchData]);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [fetchTiered]);
 
-  const getTitleKey = (provider: "claude" | "codex", sessionId: string) => `${provider}:${sessionId}`;
+  const getTitleKey = useCallback((provider: "claude" | "codex", sessionId: string) => `${provider}:${sessionId}`, []);
 
-  const getDisplayTitle = (provider: "claude" | "codex", sessionId: string) => {
-    const namespaced = customTitles[getTitleKey(provider, sessionId)];
+  const getDisplayTitle = useCallback((provider: "claude" | "codex", sessionId: string) => {
+    const namespaced = customTitles[`${provider}:${sessionId}`];
     if (namespaced) {
       return namespaced;
     }
@@ -636,7 +728,18 @@ export function ClaudeMonitor() {
       return customTitles[sessionId];
     }
     return undefined;
-  };
+  }, [customTitles]);
+
+  // Stable card interaction callbacks (prevent re-render of memo'd SessionCard/CodexSessionCard)
+  const handleCardTitleEdit = useCallback((provider: "claude" | "codex", id: string, name: string) => {
+    setSelectedTitleTarget({ provider, id, name });
+    setShowTitleEditModal(true);
+  }, []);
+
+  const handleCardClick = useCallback((session: Session) => {
+    setSelectedSession(session);
+    setShowSessionDetailModal(true);
+  }, []);
 
   // Handle title edit
   const handleTitleEdit = (provider: "claude" | "codex", sessionId: string, customTitle: string) => {
@@ -805,7 +908,7 @@ export function ClaudeMonitor() {
     setEditingTask(null);
   };
 
-  const buildUnifiedSessions = (bucket: SessionBucket): UnifiedSession[] => {
+  const buildUnifiedSessions = useCallback((bucket: SessionBucket): UnifiedSession[] => {
     const claudeSessions = sessionsData?.grouped[bucket] ?? [];
     const codexSessions = codexData?.grouped[bucket] ?? [];
 
@@ -813,11 +916,28 @@ export function ClaudeMonitor() {
       ...claudeSessions.map((session) => ({ provider: "claude" as const, session })),
       ...codexSessions.map((session) => ({ provider: "codex" as const, session })),
     ].sort((a, b) => a.session.minutesAgo - b.session.minutesAgo);
-  };
+  }, [sessionsData, codexData]);
 
-  const activeSessions = buildUnifiedSessions("active");
-  const recentSessions = buildUnifiedSessions("recent");
-  const pastSessions = buildUnifiedSessions("past");
+  const activeSessions = useMemo(() => buildUnifiedSessions("active"), [buildUnifiedSessions]);
+  const recentSessions = useMemo(() => buildUnifiedSessions("recent"), [buildUnifiedSessions]);
+  const pastSessions = useMemo(() => buildUnifiedSessions("past"), [buildUnifiedSessions]);
+
+  // Chunk past sessions into rows of 3 for virtual scrolling
+  const PAST_COLS = 3;
+  const pastSessionRows = useMemo(() => {
+    const rows: UnifiedSession[][] = [];
+    for (let i = 0; i < pastSessions.length; i += PAST_COLS) {
+      rows.push(pastSessions.slice(i, i + PAST_COLS));
+    }
+    return rows;
+  }, [pastSessions]);
+
+  const pastVirtualizer = useVirtualizer({
+    count: pastSessionRows.length,
+    getScrollElement: () => pastScrollRef.current,
+    estimateSize: () => 200,
+    overscan: 2,
+  });
 
   const formatTimelineTime = (value: string): string => {
     return new Date(value).toLocaleString("ja-JP", {
@@ -929,7 +1049,7 @@ export function ClaudeMonitor() {
     };
   }, [codexPeriod, statsData]);
 
-  const renderUnifiedCard = (item: UnifiedSession) => {
+  const renderUnifiedCard = useCallback((item: UnifiedSession) => {
     const isClaude = item.provider === "claude";
     return (
       <div key={`${item.provider}-${item.session.id}`} className="space-y-1">
@@ -948,37 +1068,21 @@ export function ClaudeMonitor() {
             exchangeRate={exchangeRate}
             customTitle={getDisplayTitle("claude", item.session.id)}
             borderClassName={item.session.status === "active" ? "!border-orange-500" : undefined}
-            onTitleEdit={() => {
-              setSelectedTitleTarget({
-                provider: "claude",
-                id: item.session.id,
-                name: item.session.name,
-              });
-              setShowTitleEditModal(true);
-            }}
-            onClick={() => {
-              setSelectedSession(item.session);
-              setShowSessionDetailModal(true);
-            }}
+            onTitleEdit={() => handleCardTitleEdit("claude", item.session.id, item.session.name)}
+            onClick={() => handleCardClick(item.session)}
+            todos={todosMap[item.session.id]}
           />
         ) : (
           <CodexSessionCard
             session={item.session}
             exchangeRate={exchangeRate}
             customTitle={getDisplayTitle("codex", item.session.id)}
-            onTitleEdit={() => {
-              setSelectedTitleTarget({
-                provider: "codex",
-                id: item.session.id,
-                name: item.session.name,
-              });
-              setShowTitleEditModal(true);
-            }}
+            onTitleEdit={() => handleCardTitleEdit("codex", item.session.id, item.session.name)}
           />
         )}
       </div>
     );
-  };
+  }, [exchangeRate, getDisplayTitle, handleCardTitleEdit, handleCardClick, todosMap]);
 
   if (loading) {
     return (
@@ -1014,7 +1118,7 @@ export function ClaudeMonitor() {
             Settings
           </button>
           <button
-            onClick={fetchData}
+            onClick={() => fetchTiered(true)}
             className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             title="Refresh"
           >
@@ -1111,7 +1215,7 @@ export function ClaudeMonitor() {
               {error ? (
                 <div className="text-red-500 p-4">
                   Error: {error}
-                  <button onClick={fetchData} className="ml-2 text-blue-500 hover:underline">Retry</button>
+                  <button onClick={() => fetchTiered(true)} className="ml-2 text-blue-500 hover:underline">Retry</button>
                 </div>
               ) : sessionsData ? (
                 <div className="space-y-6">
@@ -1166,12 +1270,31 @@ export function ClaudeMonitor() {
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Claude {sessionsData.grouped.past.length} / Codex {codexData?.grouped.past.length ?? 0}
                     </p>
-                    {!pastCollapsed && (
-                      <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {pastSessions.map(renderUnifiedCard)}
-                        {pastSessions.length === 0 && (
-                          <div className="p-4 text-gray-500 dark:text-gray-400">No past sessions</div>
-                        )}
+                    {!pastCollapsed && pastSessions.length === 0 && (
+                      <div className="mt-3 p-4 text-gray-500 dark:text-gray-400">No past sessions</div>
+                    )}
+                    {!pastCollapsed && pastSessions.length > 0 && (
+                      <div ref={pastScrollRef} className="mt-3 max-h-[600px] overflow-y-auto">
+                        <div style={{ height: `${pastVirtualizer.getTotalSize()}px`, position: "relative" }}>
+                          {pastVirtualizer.getVirtualItems().map((virtualRow) => {
+                            const row = pastSessionRows[virtualRow.index];
+                            return (
+                              <div
+                                key={virtualRow.key}
+                                style={{
+                                  position: "absolute",
+                                  top: 0,
+                                  left: 0,
+                                  width: "100%",
+                                  transform: `translateY(${virtualRow.start}px)`,
+                                }}
+                                className="grid grid-cols-1 gap-4 pb-4 md:grid-cols-2 lg:grid-cols-3"
+                              >
+                                {row.map(renderUnifiedCard)}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </section>
@@ -1271,7 +1394,7 @@ export function ClaudeMonitor() {
               if (res.ok) {
                 const newConfig = await res.json();
                 setConfigData(newConfig);
-                fetchData();
+                fetchTiered(true);
               }
             } catch (err) {
               console.error("Failed to save config:", err);

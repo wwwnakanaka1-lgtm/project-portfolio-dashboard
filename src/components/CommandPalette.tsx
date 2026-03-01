@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Command } from "cmdk";
 import { Project, Categories } from "@/lib/types";
+import { getGrowthLevelInfo } from "@/lib/growth-level";
 
 interface CommandPaletteProps {
   projects: Project[];
@@ -139,7 +140,10 @@ export function CommandPalette({
                       style={{ backgroundColor: categories[project.category]?.color }}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{project.name}</div>
+                      <div className="font-medium truncate">
+                        <span className="mr-1">{getGrowthLevelInfo(project).icon}</span>
+                        {project.name}
+                      </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                         {project.description}
                       </div>

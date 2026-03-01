@@ -224,6 +224,7 @@ function buildAutoProject(projectId: string): Project {
     path: projectDir.replace(/\\/g, "/"),
     technologies: detectTechnologies(projectDir),
     status: inferStatus(projectDir),
+    growthLevel: "seed",
   };
   if (launchCommand) {
     project.launchCommand = launchCommand;

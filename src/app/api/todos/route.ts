@@ -4,8 +4,8 @@ import path from "path";
 import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
 
-// Cache TTL - 10 seconds for todos (needs to be fresh but not too expensive)
-const TODOS_CACHE_TTL = 10000;
+// Cache TTL - 30 seconds (SWR handles interim)
+const TODOS_CACHE_TTL = 30000;
 
 interface Todo {
   content: string;

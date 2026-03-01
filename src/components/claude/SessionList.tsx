@@ -50,6 +50,7 @@ interface SessionCardProps {
   onTitleEdit: () => void;
   onClick: () => void;
   borderClassName?: string;
+  todos?: Todo[];
 }
 
 export const SessionCard = memo(function SessionCard({
@@ -59,23 +60,27 @@ export const SessionCard = memo(function SessionCard({
   onTitleEdit,
   onClick,
   borderClassName,
+  todos: externalTodos,
 }: SessionCardProps) {
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const [internalTodos, setInternalTodos] = useState<Todo[]>([]);
 
   useEffect(() => {
+    if (externalTodos !== undefined) return; // Skip fetch when parent provides todos
     const fetchTodos = async () => {
       try {
         const res = await fetch(`/api/todos?sessionId=${session.id}`);
         if (res.ok) {
           const data = await res.json();
-          setTodos(data.todos || []);
+          setInternalTodos(data.todos || []);
         }
       } catch {
         // Ignore errors
       }
     };
     fetchTodos();
-  }, [session.id]);
+  }, [session.id, externalTodos]);
+
+  const todos = externalTodos ?? internalTodos;
 
   const formatTime = (minutesAgo: number) => {
     if (minutesAgo < 1) return "たった今";

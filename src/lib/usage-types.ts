@@ -78,6 +78,23 @@ export const MODEL_PRICING: Record<string, { input: number; output: number; cach
 };
 
 /**
+ * Normalize a raw model ID to a human-readable display name.
+ * Used across UI components and exports to ensure consistency.
+ */
+export function normalizeModelName(model: string): string {
+  if (model.includes("opus-4-6")) return "Opus 4.6";
+  if (model.includes("opus-4-5")) return "Opus 4.5";
+  if (model.includes("opus")) return "Opus";
+  if (model.includes("sonnet-4-6")) return "Sonnet 4.6";
+  if (model.includes("sonnet-4-5")) return "Sonnet 4.5";
+  if (model.includes("sonnet")) return "Sonnet";
+  if (model.includes("haiku-4-5")) return "Haiku 4.5";
+  if (model.includes("haiku")) return "Haiku";
+  if (model === "<synthetic>") return "Synthetic (System)";
+  return model;
+}
+
+/**
  * Get pricing for a model with fallback logic.
  * Falls back to Opus pricing for unknown opus models, Haiku for haiku models,
  * and Sonnet pricing as the default.

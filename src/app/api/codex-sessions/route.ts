@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
 import path from "path";
-import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
 import {
   parsePlanProgress,
-  walkJsonlFiles,
   type PlanProgress,
 } from "@/lib/codex-session-utils";
+import { getCodexFileLines, getFileStats } from "@/lib/file-cache";
+import { getCodexJsonlFiles } from "@/lib/file-discovery";
 
-const SESSIONS_CACHE_TTL = 5000;
+const SESSIONS_CACHE_TTL = 30000; // 30s (SWR handles interim)
 const DEFAULT_MODEL = "gpt-5.3-codex";
 const MAX_SESSION_SCAN_FILES = Number(process.env.CODEX_SESSION_SCAN_MAX_FILES ?? 2000);
 
@@ -62,19 +61,6 @@ interface CodexSession {
   estimatedCostUsd: number;
   pricing: PricingPerMillion;
   progress: PlanProgress | null;
-}
-
-function getCodexSessionsRoot(): string {
-  const homeDir = os.homedir();
-  return path.join(homeDir, ".codex", "sessions");
-}
-
-function safeJsonParse<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
 }
 
 function compactText(value: string, maxLength = 120): string {
@@ -166,9 +152,9 @@ function getSessionStatus(minutesAgo: number): SessionStatus {
 }
 
 function parseSessionFile(filePath: string): CodexSession | null {
-  const stats = fs.statSync(filePath);
-  const content = fs.readFileSync(filePath, "utf8");
-  const lines = content.split(/\r?\n/).filter(Boolean);
+  const stats = getFileStats(filePath);
+  if (!stats) return null;
+  const rawLines = getCodexFileLines(filePath);
 
   let sessionId = "";
   let created = stats.birthtime.toISOString();
@@ -190,12 +176,12 @@ function parseSessionFile(filePath: string): CodexSession | null {
 
   let progress: PlanProgress | null = null;
 
-  for (const line of lines) {
-    const entry = safeJsonParse<{
+  for (const rawEntry of rawLines) {
+    const entry = rawEntry as {
       timestamp?: string;
       type?: string;
       payload?: Record<string, unknown>;
-    }>(line);
+    } | null;
     if (!entry || !entry.type) {
       continue;
     }
@@ -334,12 +320,11 @@ function parseSessionFile(filePath: string): CodexSession | null {
 
 function readCodexSessions(): CodexSession[] {
   return getCachedSync("codex-sessions-list", SESSIONS_CACHE_TTL, () => {
-    const root = getCodexSessionsRoot();
-    const walkResult = walkJsonlFiles(root, { maxFiles: MAX_SESSION_SCAN_FILES });
+    const allFiles = getCodexJsonlFiles(MAX_SESSION_SCAN_FILES);
     const sessions: CodexSession[] = [];
     let failedFiles = 0;
 
-    for (const filePath of walkResult.files) {
+    for (const filePath of allFiles) {
       try {
         const session = parseSessionFile(filePath);
         if (session) {
@@ -354,20 +339,11 @@ function readCodexSessions(): CodexSession[] {
       }
     }
 
-    if (walkResult.reachedLimit) {
-      console.warn("[codex-sessions] Scan limit reached", {
-        maxFiles: MAX_SESSION_SCAN_FILES,
-      });
-    }
-
     if (failedFiles > 0) {
-      console.warn("[codex-sessions] Session parse failures detected", {
-        failedFiles,
-      });
+      console.warn("[codex-sessions] Session parse failures detected", { failedFiles });
     }
 
     sessions.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-
     return sessions;
   });
 }

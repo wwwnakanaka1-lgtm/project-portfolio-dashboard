@@ -4,7 +4,7 @@ import { Project, Categories } from "./types";
  * Export projects to CSV format
  */
 export function exportToCSV(projects: Project[], categories: Categories): void {
-  const headers = ["ID", "Name", "Category", "Description", "Technologies", "Status", "Path"];
+  const headers = ["ID", "Name", "Category", "Description", "Technologies", "Status", "Growth Level", "Superseded By", "Path"];
 
   const rows = projects.map((project) => {
     const categoryName = categories[project.category]?.name || project.category;
@@ -15,6 +15,8 @@ export function exportToCSV(projects: Project[], categories: Categories): void {
       escapeCsvField(project.description),
       escapeCsvField(project.technologies.join("; ")),
       escapeCsvField(project.status),
+      escapeCsvField(project.growthLevel ?? "seed"),
+      escapeCsvField(project.evolution?.supersededBy ?? ""),
       escapeCsvField(project.path),
     ].join(",");
   });

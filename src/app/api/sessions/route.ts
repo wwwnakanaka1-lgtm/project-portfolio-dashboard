@@ -3,12 +3,13 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
+import { getClaudeFileData, getFileStats } from "@/lib/file-cache";
+import { getClaudeProjectDir, getSessionsIndex } from "@/lib/file-discovery";
 import { calculateCost as calculateCostFromPricing } from "@/lib/usage-types";
 
 // Cache TTLs
-const SESSIONS_CACHE_TTL = 5000; // 5 seconds for main session data
+const SESSIONS_CACHE_TTL = 15000; // 15 seconds (SWR handles interim)
 const UNINDEXED_CACHE_TTL = 60000; // 60 seconds for unindexed session scan (expensive)
-const TOKEN_USAGE_CACHE_TTL = 30000; // 30 seconds for token usage per file
 
 interface TokenUsage {
   inputTokens: number;
@@ -43,63 +44,25 @@ interface FormattedSession {
 }
 
 // Find sessions-index.json path
-function findSessionsFile(): string {
-  const homeDir = os.homedir();
-  const baseDir = path.join(homeDir, ".claude", "projects");
-  const variations = ["C--Users-wwwhi", "c--Users-wwwhi"];
-
-  for (const dir of variations) {
-    const filePath = path.join(baseDir, dir, "sessions-index.json");
-    if (fs.existsSync(filePath)) {
-      return filePath;
-    }
-  }
-
-  return path.join(baseDir, "C--Users-wwwhi", "sessions-index.json");
+function findSessionsFile(): string | null {
+  const projectDir = getClaudeProjectDir();
+  if (!projectDir) return null;
+  const filePath = path.join(projectDir, "sessions-index.json");
+  return fs.existsSync(filePath) ? filePath : null;
 }
 
-// Parse JSONL file to get token usage (with caching)
+// Parse JSONL file to get token usage (delegated to file-cache)
 function getSessionTokenUsage(jsonlPath: string): TokenUsage | null {
-  // Check file modification time - if file hasn't changed, use cached value
-  try {
-    const stats = fs.statSync(jsonlPath);
-    const cacheKey = `token-usage:${jsonlPath}:${stats.mtime.getTime()}`;
-
-    return getCachedSync(cacheKey, TOKEN_USAGE_CACHE_TTL, () => {
-      const content = fs.readFileSync(jsonlPath, "utf8");
-      const lines = content.trim().split("\n");
-
-      let inputTokens = 0;
-      let outputTokens = 0;
-      let cacheReadTokens = 0;
-      let cacheCreationTokens = 0;
-
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          if (entry.type === "assistant" && entry.message?.usage) {
-            const usage = entry.message.usage;
-            inputTokens += usage.input_tokens || 0;
-            outputTokens += usage.output_tokens || 0;
-            cacheReadTokens += usage.cache_read_input_tokens || 0;
-            cacheCreationTokens += usage.cache_creation_input_tokens || 0;
-          }
-        } catch {
-          // Skip invalid lines
-        }
-      }
-
-      return {
-        inputTokens,
-        outputTokens,
-        cacheReadTokens,
-        cacheCreationTokens,
-        totalTokens: inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens,
-      };
-    });
-  } catch {
-    return null;
-  }
+  const data = getClaudeFileData(jsonlPath);
+  if (!data) return null;
+  if (data.totalTokens === 0) return null;
+  return {
+    inputTokens: data.inputTokens,
+    outputTokens: data.outputTokens,
+    cacheReadTokens: data.cacheReadTokens,
+    cacheCreationTokens: data.cacheCreationTokens,
+    totalTokens: data.totalTokens,
+  };
 }
 
 // Calculate estimated cost (USD) using centralized pricing
@@ -173,24 +136,15 @@ function findUnindexedSessionsUncached(projectsDir: string, indexedSessionIds: S
 
       if (!jsonlFile) continue;
 
-      // Read first user prompt and count messages
-      try {
-        const content = fs.readFileSync(jsonlFile, "utf8");
-        const lines = content.trim().split("\n");
-        for (const line of lines) {
-          try {
-            const jsonEntry = JSON.parse(line);
-            if (jsonEntry.type === "user" && jsonEntry.message?.content && !firstPrompt) {
-              firstPrompt = jsonEntry.message.content.substring(0, 200);
-            }
-            if (jsonEntry.type === "user" || jsonEntry.type === "assistant") {
-              messageCount++;
-            }
-          } catch {}
-        }
-      } catch {}
+      // Use file-cache: single read, no duplicate I/O
+      const fileData = getClaudeFileData(jsonlFile);
+      if (fileData) {
+        firstPrompt = fileData.firstUserPrompt;
+        messageCount = fileData.messageCount;
+      }
 
-      const stats = fs.statSync(jsonlFile);
+      const stats = getFileStats(jsonlFile);
+      if (!stats) continue;
       const tokenUsage = getSessionTokenUsage(jsonlFile);
       const cost = tokenUsage ? calculateCost(tokenUsage) : 0;
 
@@ -242,16 +196,13 @@ function readSessions(): FormattedSession[] {
 
 function readSessionsUncached(): FormattedSession[] {
   try {
-    const sessionsFile = findSessionsFile();
-    const projectsDir = path.dirname(sessionsFile);
+    const projectDir = getClaudeProjectDir();
+    if (!projectDir) return [];
 
-    if (!fs.existsSync(sessionsFile)) {
+    const entries = getSessionsIndex();
+    if (entries.length === 0 && !fs.existsSync(path.join(projectDir, "sessions-index.json"))) {
       return [];
     }
-
-    const data = fs.readFileSync(sessionsFile, "utf8");
-    const parsed = JSON.parse(data);
-    const entries: SessionEntry[] = parsed.entries || [];
 
     // Track indexed session IDs
     const indexedSessionIds = new Set(entries.map((e) => e.sessionId));
@@ -265,7 +216,8 @@ function readSessionsUncached(): FormattedSession[] {
           jsonlPath = jsonlPath.replace(/c--Users-wwwhi/i, "C--Users-wwwhi");
         }
 
-        const stats = fs.statSync(jsonlPath);
+        const stats = getFileStats(jsonlPath);
+        if (!stats) throw new Error("File not found");
         const tokenUsage = getSessionTokenUsage(jsonlPath);
         const cost = tokenUsage ? calculateCost(tokenUsage) : 0;
 
@@ -327,7 +279,7 @@ function readSessionsUncached(): FormattedSession[] {
     });
 
     // Find and add unindexed sessions
-    const unindexedSessions = findUnindexedSessions(projectsDir, indexedSessionIds);
+    const unindexedSessions = findUnindexedSessions(projectDir, indexedSessionIds);
 
     // Combine and sort by modified time (newest first)
     const allSessions = [...indexedSessions, ...unindexedSessions];

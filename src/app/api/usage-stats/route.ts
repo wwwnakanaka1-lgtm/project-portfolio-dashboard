@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
 import { getPricing } from "@/lib/usage-types";
+import { getClaudeFileData } from "@/lib/file-cache";
+import { getClaudeJsonlFiles } from "@/lib/file-discovery";
 
-// Cache TTL - 30 seconds for usage stats (expensive computation)
-const USAGE_STATS_CACHE_TTL = 30000;
+// Cache TTL - 2 minutes for usage stats (SWR handles interim)
+const USAGE_STATS_CACHE_TTL = 120000; // 2 minutes (SWR handles interim)
 
 interface TokenUsage {
   inputTokens: number;
@@ -53,128 +52,81 @@ interface UsageStatsResult {
   dataSource: string;
 }
 
-// Compute usage statistics (expensive operation, cached)
+// Compute usage statistics (uses file-discovery + file-cache for performance)
 function computeUsageStats(): UsageStatsResult | { error: string } {
-  const homeDir = os.homedir();
-  const projectsDir = path.join(homeDir, ".claude", "projects");
-
-  // Find the correct project directory
-  const variations = ["C--Users-wwwhi", "c--Users-wwwhi"];
-  let projectDir = "";
-
-  for (const dir of variations) {
-    const testPath = path.join(projectsDir, dir);
-    if (fs.existsSync(testPath)) {
-      projectDir = testPath;
-      break;
-    }
+  const files = getClaudeJsonlFiles();
+  if (files.length === 0) {
+    return { error: "No JSONL files found" };
   }
-
-  if (!projectDir) {
-    return { error: "Project directory not found" };
-  }
-
-  // Read all JSONL files
-  const files = fs.readdirSync(projectDir).filter((f) => f.endsWith(".jsonl"));
 
   const modelUsage: Record<string, ModelUsage> = {};
   const dailyData: Record<string, DailyActivity> = {};
   let totalMessages = 0;
   const totalSessions = files.length;
 
-  for (const file of files) {
-    const filePath = path.join(projectDir, file);
-    let content: string;
-    try {
-      content = fs.readFileSync(filePath, "utf8");
-    } catch {
-      continue; // Skip unreadable files
-    }
-    const lines = content.split("\n").filter((l) => l.trim());
+  for (const filePath of files) {
+    const fileData = getClaudeFileData(filePath);
+    if (!fileData) continue;
 
+    totalMessages += fileData.messageCount;
+
+    // Track session date from first usage entry
     let sessionDate = "";
-    let sessionMessages = 0;
-    let sessionToolCalls = 0;
 
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
+    // Aggregate from pre-computed usage entries
+    for (const ue of fileData.usageEntries) {
+      const model = ue.model;
+      const date = ue.date;
 
-        // Get session date from first entry
-        if (!sessionDate && entry.timestamp) {
-          sessionDate = entry.timestamp.split("T")[0];
-        }
+      if (!sessionDate && date) {
+        sessionDate = date;
+      }
 
-        // Count messages
-        if (entry.type === "user" || entry.type === "assistant") {
-          sessionMessages++;
-          totalMessages++;
-        }
+      // Initialize model usage if needed
+      if (!modelUsage[model]) {
+        modelUsage[model] = {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+          cost: 0,
+        };
+      }
 
-        // Count tool calls
-        if (entry.message?.content) {
-          const msgContent = entry.message.content;
-          if (Array.isArray(msgContent)) {
-            sessionToolCalls += msgContent.filter((c: { type: string }) => c.type === "tool_use").length;
-          }
-        }
+      modelUsage[model].inputTokens += ue.inputTokens;
+      modelUsage[model].outputTokens += ue.outputTokens;
+      modelUsage[model].cacheReadTokens += ue.cacheReadTokens;
+      modelUsage[model].cacheCreateTokens += ue.cacheCreateTokens;
 
-        // Process token usage
-        if (entry.message?.usage) {
-          const u = entry.message.usage;
-          const model = entry.message.model || "claude-opus-4-5-20251101";
+      // Initialize daily data if needed
+      if (date && !dailyData[date]) {
+        dailyData[date] = {
+          date,
+          messageCount: 0,
+          sessionCount: 0,
+          toolCallCount: 0,
+          tokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+          cost: 0,
+        };
+      }
 
-          // Initialize model usage if needed
-          if (!modelUsage[model]) {
-            modelUsage[model] = {
-              inputTokens: 0,
-              outputTokens: 0,
-              cacheReadTokens: 0,
-              cacheCreateTokens: 0,
-              cost: 0,
-            };
-          }
-
-          // Accumulate tokens
-          modelUsage[model].inputTokens += u.input_tokens || 0;
-          modelUsage[model].outputTokens += u.output_tokens || 0;
-          modelUsage[model].cacheReadTokens += u.cache_read_input_tokens || 0;
-          modelUsage[model].cacheCreateTokens += u.cache_creation_input_tokens || 0;
-
-          // Initialize daily data if needed
-          const date = entry.timestamp?.split("T")[0] || sessionDate;
-          if (date && !dailyData[date]) {
-            dailyData[date] = {
-              date,
-              messageCount: 0,
-              sessionCount: 0,
-              toolCallCount: 0,
-              tokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
-              cost: 0,
-            };
-          }
-
-          if (date) {
-            dailyData[date].tokens.inputTokens += u.input_tokens || 0;
-            dailyData[date].tokens.outputTokens += u.output_tokens || 0;
-            dailyData[date].tokens.cacheReadTokens += u.cache_read_input_tokens || 0;
-            dailyData[date].tokens.cacheCreateTokens += u.cache_creation_input_tokens || 0;
-          }
-        }
-      } catch {
-        // Skip invalid JSON lines
+      if (date) {
+        dailyData[date].tokens.inputTokens += ue.inputTokens;
+        dailyData[date].tokens.outputTokens += ue.outputTokens;
+        dailyData[date].tokens.cacheReadTokens += ue.cacheReadTokens;
+        dailyData[date].tokens.cacheCreateTokens += ue.cacheCreateTokens;
       }
     }
 
-    // Update daily session/message counts
+    // Update daily session/message/tool counts
     if (sessionDate && dailyData[sessionDate]) {
       dailyData[sessionDate].sessionCount++;
-      dailyData[sessionDate].messageCount += sessionMessages;
-      dailyData[sessionDate].toolCallCount += sessionToolCalls;
+      dailyData[sessionDate].messageCount += fileData.messageCount;
+      dailyData[sessionDate].toolCallCount += fileData.toolCallCount;
     }
   }
 
-  // Calculate costs for each model
+  // Calculate costs for each model (unchanged logic)
   for (const [model, usage] of Object.entries(modelUsage)) {
     const pricing = getPricing(model);
     usage.cost =
@@ -184,7 +136,7 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
       (usage.cacheCreateTokens / 1e6) * pricing.cacheCreate;
   }
 
-  // Calculate daily costs (use Opus pricing as default for aggregate daily costs)
+  // Calculate daily costs
   for (const day of Object.values(dailyData)) {
     const pricing = getPricing("claude-opus-4-5-20251101");
     day.cost =
@@ -194,6 +146,7 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
       (day.tokens.cacheCreateTokens / 1e6) * pricing.cacheCreate;
   }
 
+  // === Everything below this line stays exactly the same as the original ===
   // Calculate totals
   const totalCost = Object.values(modelUsage).reduce((sum, m) => sum + m.cost, 0);
   const totalTokens = Object.values(modelUsage).reduce(
@@ -201,22 +154,17 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
     0
   );
 
-  // Sort daily activity by date
   const dailyActivity = Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date));
 
-  // Calculate period costs
   const today = new Date();
   const todayStr = today.toISOString().split("T")[0];
 
-  // Week start (Monday)
   const weekStart = new Date(today);
   weekStart.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1));
   const weekStartStr = weekStart.toISOString().split("T")[0];
 
-  // Month start
   const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
 
-  // Last month key
   const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
 
@@ -226,13 +174,11 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
   let lastMonthCost = 0;
   let todayMessages = 0;
 
-  // Monthly aggregation
   const monthlyCosts: Record<string, { cost: number; days: number; tokens: TokenUsage }> = {};
 
   for (const day of dailyActivity) {
     const monthKey = day.date.substring(0, 7);
 
-    // Aggregate by month
     if (!monthlyCosts[monthKey]) {
       monthlyCosts[monthKey] = {
         cost: 0,
@@ -247,7 +193,6 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
     monthlyCosts[monthKey].tokens.cacheReadTokens += day.tokens.cacheReadTokens;
     monthlyCosts[monthKey].tokens.cacheCreateTokens += day.tokens.cacheCreateTokens;
 
-    // Period costs
     if (day.date === todayStr) {
       todayCost = day.cost;
       todayMessages = day.messageCount;
@@ -263,7 +208,6 @@ function computeUsageStats(): UsageStatsResult | { error: string } {
     }
   }
 
-  // Build monthly summary array
   const monthlySummary = Object.entries(monthlyCosts)
     .map(([month, data]) => ({
       month,

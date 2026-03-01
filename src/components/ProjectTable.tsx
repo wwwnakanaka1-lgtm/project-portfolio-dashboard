@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useMemo, useEffect, memo } from "react";
-import { Project, Categories } from "@/lib/types";
+import { Project, Categories, GrowthLevel } from "@/lib/types";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { useExchangeRate } from "@/hooks/useExchangeRate";
+import { getGrowthLevelInfo, getGrowthLevelOrder } from "@/lib/growth-level";
 
 interface ProjectCost {
   projectPath: string;
@@ -18,6 +20,7 @@ interface ProjectTableProps {
   categories: Categories;
   selectedCategory?: string | null;
   selectedTech?: string | null;
+  selectedGrowthLevel?: GrowthLevel | null;
   onProjectClick?: (project: Project) => void;
   favorites?: Set<string>;
   onToggleFavorite?: (projectId: string) => void;
@@ -28,16 +31,17 @@ export const ProjectTable = memo(function ProjectTable({
   categories,
   selectedCategory,
   selectedTech,
+  selectedGrowthLevel,
   onProjectClick,
   favorites,
   onToggleFavorite,
 }: ProjectTableProps) {
-  const [sortKey, setSortKey] = useState<"name" | "category" | "status" | "cost">("cost");
+  const [sortKey, setSortKey] = useState<"name" | "category" | "status" | "cost" | "growthLevel">("cost");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [searchTerm, setSearchTerm] = useState("");
   const [projectCosts, setProjectCosts] = useState<Map<string, ProjectCost>>(new Map());
   const [totalApiCost, setTotalApiCost] = useState(0);
-  const [exchangeRate, setExchangeRate] = useState(150);
+  const { exchangeRate } = useExchangeRate();
 
   // Fetch project costs
   useEffect(() => {
@@ -60,21 +64,7 @@ export const ProjectTable = memo(function ProjectTable({
       }
     };
 
-    // Fetch exchange rate
-    const fetchExchangeRate = async () => {
-      try {
-        const res = await fetch("https://open.er-api.com/v6/latest/USD");
-        if (res.ok) {
-          const data = await res.json();
-          setExchangeRate(data.rates?.JPY || 150);
-        }
-      } catch {
-        // Use default
-      }
-    };
-
     fetchCosts();
-    fetchExchangeRate();
   }, []);
 
   const getProjectCost = (project: Project): number => {
@@ -94,6 +84,13 @@ export const ProjectTable = memo(function ProjectTable({
     // Filter by technology
     if (selectedTech) {
       result = result.filter((p) => p.technologies.includes(selectedTech));
+    }
+
+    // Filter by growth level
+    if (selectedGrowthLevel) {
+      result = result.filter(
+        (p) => (p.growthLevel ?? "seed") === selectedGrowthLevel
+      );
     }
 
     // Filter by search term
@@ -118,14 +115,16 @@ export const ProjectTable = memo(function ProjectTable({
         compare = a.status.localeCompare(b.status);
       } else if (sortKey === "cost") {
         compare = getProjectCost(a) - getProjectCost(b);
+      } else if (sortKey === "growthLevel") {
+        compare = getGrowthLevelOrder(a) - getGrowthLevelOrder(b);
       }
       return sortOrder === "asc" ? compare : -compare;
     });
 
     return result;
-  }, [projects, selectedCategory, selectedTech, searchTerm, sortKey, sortOrder, projectCosts]);
+  }, [projects, selectedCategory, selectedTech, selectedGrowthLevel, searchTerm, sortKey, sortOrder, projectCosts]);
 
-  const handleSort = (key: "name" | "category" | "status" | "cost") => {
+  const handleSort = (key: "name" | "category" | "status" | "cost" | "growthLevel") => {
     if (sortKey === key) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
     } else {
@@ -145,6 +144,22 @@ export const ProjectTable = memo(function ProjectTable({
     if (cost < 0.01) return "";
     const jpy = Math.round(cost * exchangeRate);
     return `¥${jpy.toLocaleString()}`;
+  };
+
+  const growthLevelBadge = (project: Project) => {
+    const info = getGrowthLevelInfo(project);
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap"
+        style={{
+          backgroundColor: `${info.color}18`,
+          color: info.color,
+        }}
+      >
+        <span>{info.icon}</span>
+        <span>{info.labelJa}</span>
+      </span>
+    );
   };
 
   const statusBadge = (status: string) => {
@@ -241,6 +256,12 @@ export const ProjectTable = memo(function ProjectTable({
               </th>
               <th
                 className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                onClick={() => handleSort("growthLevel")}
+              >
+                成長Lv {sortKey === "growthLevel" && (sortOrder === "asc" ? "↑" : "↓")}
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
                 onClick={() => handleSort("status")}
               >
                 状態 {sortKey === "status" && (sortOrder === "asc" ? "↑" : "↓")}
@@ -267,10 +288,15 @@ export const ProjectTable = memo(function ProjectTable({
                     </td>
                   )}
                   <td className="px-4 py-4">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {project.name}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm flex-shrink-0" title={getGrowthLevelInfo(project).labelJa}>
+                        {getGrowthLevelInfo(project).icon}
+                      </span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {project.name}
+                      </span>
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 pl-6">
                       {project.description}
                     </div>
                   </td>
@@ -313,6 +339,7 @@ export const ProjectTable = memo(function ProjectTable({
                       <span className="text-gray-400">-</span>
                     )}
                   </td>
+                  <td className="px-4 py-4">{growthLevelBadge(project)}</td>
                   <td className="px-4 py-4">{statusBadge(project.status)}</td>
                 </tr>
               );

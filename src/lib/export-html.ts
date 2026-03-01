@@ -1,5 +1,6 @@
 import { Project, Categories } from "./types";
 import { getExchangeRate } from "./exchange-rate";
+import { normalizeModelName } from "./usage-types";
 
 // Fallback rate if API fails
 const FALLBACK_RATE = 150;
@@ -68,29 +69,20 @@ export async function exportToHTML(projects: Project[], categories: Categories):
     const response = await fetch("/api/usage-stats");
     if (response.ok) {
       const data = await response.json();
-      const models = Object.entries(data.modelUsage as Record<string, { cost: number }>)
-        .sort((a, b) => b[1].cost - a[1].cost)
-        .map(([model, usage]) => {
-          // Determine model name from model ID
-          let name: string;
-          if (model.includes("opus")) {
-            name = "Opus 4.5";
-          } else if (model.includes("sonnet")) {
-            name = "Sonnet 4.5";
-          } else if (model.includes("haiku")) {
-            name = "Haiku 4.5";
-          } else if (model === "<synthetic>") {
-            name = "Synthetic (System)";
-          } else {
-            name = model;
-          }
-          return {
-            name,
-            cost: Math.round(usage.cost * 100) / 100,
-            costJPY: Math.round(usage.cost * USD_TO_JPY),
-            percentage: Math.round((usage.cost / data.totalCost) * 1000) / 10,
-          };
-        });
+      // Merge model entries by normalized display name to avoid duplicates
+      const mergedByName = new Map<string, number>();
+      for (const [model, usage] of Object.entries(data.modelUsage as Record<string, { cost: number }>)) {
+        const name = normalizeModelName(model);
+        mergedByName.set(name, (mergedByName.get(name) ?? 0) + usage.cost);
+      }
+      const models = [...mergedByName.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, cost]) => ({
+          name,
+          cost: Math.round(cost * 100) / 100,
+          costJPY: Math.round(cost * USD_TO_JPY),
+          percentage: Math.round((cost / data.totalCost) * 1000) / 10,
+        }));
 
       usageStats = {
         totalCost: Math.round(data.totalCost * 100) / 100,

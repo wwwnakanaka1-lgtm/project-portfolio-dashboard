@@ -7,14 +7,13 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { getExchangeRate } from "@/lib/exchange-rate";
+import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { CostAnomalyAlert } from "@/components/CostAnomalyAlert";
-import { getPricing } from "@/lib/usage-types";
-
-const FALLBACK_RATE = 150;
+import { getPricing, normalizeModelName } from "@/lib/usage-types";
 
 interface ModelUsage {
   inputTokens: number;
@@ -54,20 +53,22 @@ interface UsageData {
   dataSource: string;
 }
 
+type ActivityRange = "14d" | "30d" | "90d" | "all";
+const ACTIVITY_RANGES: { key: ActivityRange; label: string }[] = [
+  { key: "14d", label: "2週間" },
+  { key: "30d", label: "1ヶ月" },
+  { key: "90d", label: "3ヶ月" },
+  { key: "all", label: "全期間" },
+];
+
 export function UsageStats() {
-  const [exchangeRate, setExchangeRate] = useState(FALLBACK_RATE);
-  const [rateSource, setRateSource] = useState<"api" | "fallback">("fallback");
+  const { exchangeRate, rateSource } = useExchangeRate();
   const [data, setData] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activityRange, setActivityRange] = useState<ActivityRange>("30d");
 
   useEffect(() => {
-    // Fetch exchange rate
-    getExchangeRate().then((result) => {
-      setExchangeRate(result.rate);
-      setRateSource(result.source);
-    });
-
     // Fetch usage data from API
     fetch("/api/usage-stats")
       .then((res) => {
@@ -116,14 +117,30 @@ export function UsageStats() {
     );
   }
 
-  const chartData = data.dailyActivity.slice(-14).map((d) => ({
+  const sliceCount = activityRange === "14d" ? 14 : activityRange === "30d" ? 30 : activityRange === "90d" ? 90 : data.dailyActivity.length;
+  const chartData = data.dailyActivity.slice(-sliceCount).map((d) => ({
     date: d.date.slice(5),
     messages: d.messageCount,
     tools: d.toolCallCount,
   }));
 
-  const modelEntries = Object.entries(data.modelUsage)
-    .filter(([model]) => model !== "<synthetic>")
+  // Merge model entries by normalized display name to avoid duplicates
+  const mergedModels = new Map<string, ModelUsage & { displayName: string }>();
+  for (const [model, usage] of Object.entries(data.modelUsage)) {
+    if (model === "<synthetic>") continue;
+    const displayName = normalizeModelName(model);
+    const existing = mergedModels.get(displayName);
+    if (existing) {
+      existing.inputTokens += usage.inputTokens;
+      existing.outputTokens += usage.outputTokens;
+      existing.cacheReadTokens += usage.cacheReadTokens;
+      existing.cacheCreateTokens += usage.cacheCreateTokens;
+      existing.cost += usage.cost;
+    } else {
+      mergedModels.set(displayName, { ...usage, displayName });
+    }
+  }
+  const modelEntries = [...mergedModels.entries()]
     .sort((a, b) => b[1].cost - a[1].cost);
 
   return (
@@ -167,26 +184,15 @@ export function UsageStats() {
           モデル別コスト内訳
         </h3>
         <div className="space-y-3">
-          {modelEntries.map(([model, usage]) => {
-            // Determine model name from model ID
-            let modelName: string;
-            if (model.includes("opus-4-6")) {
-              modelName = "Opus 4.6";
-            } else if (model.includes("opus")) {
-              modelName = "Opus 4.5";
-            } else if (model.includes("sonnet")) {
-              modelName = "Sonnet 4.5";
-            } else if (model.includes("haiku")) {
-              modelName = "Haiku 4.5";
-            } else if (model === "<synthetic>") {
-              modelName = "Synthetic (System)";
-            } else {
-              modelName = model; // Show raw model ID for unknown models
-            }
+          {modelEntries.map(([displayName, usage]) => {
             const percentage = (usage.cost / data.totalCost) * 100;
 
-            // Calculate individual costs based on model type
-            const pricing = getPricing(model);
+            // Calculate individual costs based on token counts and averaged pricing
+            const pricing = getPricing(
+              displayName.includes("Opus") ? "claude-opus-4-6"
+              : displayName.includes("Haiku") ? "claude-haiku-4-5-20251001"
+              : "claude-sonnet-4-5-20250929"
+            );
 
             const inputCost = (usage.inputTokens / 1e6) * pricing.input;
             const outputCost = (usage.outputTokens / 1e6) * pricing.output;
@@ -194,9 +200,9 @@ export function UsageStats() {
             const cacheCreateCost = (usage.cacheCreateTokens / 1e6) * pricing.cacheCreate;
 
             return (
-              <div key={model} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+              <div key={displayName} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-medium text-gray-900 dark:text-white" translate="no">{modelName}</span>
+                  <span className="font-medium text-gray-900 dark:text-white" translate="no">{displayName}</span>
                   <div className="text-right">
                     <span className="text-lg font-bold text-green-600">{formatUSD(usage.cost)}</span>
                     <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">({formatJPY(usage.cost)})</span>
@@ -238,23 +244,44 @@ export function UsageStats() {
 
       {/* Activity Chart */}
       <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">
-          最近のアクティビティ
-        </h3>
-        <div className="h-48">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+            アクティビティ
+          </h3>
+          <div className="flex gap-1">
+            {ACTIVITY_RANGES.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => setActivityRange(r.key)}
+                className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                  activityRange === r.key
+                    ? "bg-blue-500 text-white"
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className={activityRange === "14d" ? "h-48" : activityRange === "30d" ? "h-56" : "h-64"}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} interval={sliceCount <= 14 ? 0 : sliceCount <= 30 ? 1 : sliceCount <= 90 ? 4 : "preserveStartEnd"} />
               <YAxis tick={{ fontSize: 10 }} />
               <Tooltip
                 formatter={(value, name) => [
                   value,
-                  name === "messages" ? "メッセージ" : "ツール呼出",
+                  name === "messages" ? "Messages" : "Tool Calls",
                 ]}
               />
-              <Bar dataKey="messages" fill="#3B82F6" name="messages" />
-              <Bar dataKey="tools" fill="#10B981" name="tools" />
+              <Legend
+                formatter={(value) => (value === "messages" ? "Messages" : "Tool Calls")}
+                wrapperStyle={{ fontSize: 12 }}
+              />
+              <Bar dataKey="messages" fill="#3B82F6" name="messages" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="tools" fill="#10B981" name="tools" radius={[2, 2, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -276,7 +303,7 @@ export function UsageStats() {
               return (
                 <div key={month.month} className="flex flex-col items-center">
                   <div
-                    className="w-8 bg-green-500 rounded-t transition-all duration-300 relative group cursor-pointer"
+                    className="w-10 bg-gradient-to-t from-green-600 to-green-400 rounded-t-md transition-all duration-300 relative group cursor-pointer hover:from-green-500 hover:to-green-300"
                     style={{ height: `${height}px` }}
                     title={`${month.month}: $${month.cost.toFixed(2)} (¥${Math.round(month.cost * exchangeRate).toLocaleString()})`}
                   >

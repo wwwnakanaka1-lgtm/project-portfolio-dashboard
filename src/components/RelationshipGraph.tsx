@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import { select } from "d3-selection";
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, type SimulationNodeDatum, type SimulationLinkDatum } from "d3-force";
 import { zoom } from "d3-zoom";
@@ -25,9 +25,10 @@ interface Link extends SimulationLinkDatum<Node> {
   source: string | Node;
   target: string | Node;
   strength: number;
+  isEvolution?: boolean;
 }
 
-export function RelationshipGraph({
+export const RelationshipGraph = memo(function RelationshipGraph({
   projects,
   categories,
   onProjectClick,
@@ -57,6 +58,7 @@ export function RelationshipGraph({
 
     // Create links based on shared technologies
     const links: Link[] = [];
+    const nodeIdSet = new Set(nodes.map((n) => n.id));
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const sharedTechs = nodes[i].technologies.filter((t) =>
@@ -69,6 +71,18 @@ export function RelationshipGraph({
             strength: sharedTechs.length,
           });
         }
+      }
+    }
+
+    // Add evolution chain links (directed, dashed)
+    for (const p of projects) {
+      if (p.evolution?.supersededBy && nodeIdSet.has(p.id) && nodeIdSet.has(p.evolution.supersededBy)) {
+        links.push({
+          source: p.id,
+          target: p.evolution.supersededBy,
+          strength: 3,
+          isEvolution: true,
+        });
       }
     }
 
@@ -101,9 +115,10 @@ export function RelationshipGraph({
       .selectAll("line")
       .data(links)
       .join("line")
-      .attr("stroke", "#999")
-      .attr("stroke-opacity", 0.4)
-      .attr("stroke-width", (d) => Math.sqrt(d.strength));
+      .attr("stroke", (d) => d.isEvolution ? "#6366F1" : "#999")
+      .attr("stroke-opacity", (d) => d.isEvolution ? 0.7 : 0.4)
+      .attr("stroke-width", (d) => d.isEvolution ? 2.5 : Math.sqrt(d.strength))
+      .attr("stroke-dasharray", (d) => d.isEvolution ? "6,3" : null);
 
     // Draw nodes
     const node = container
@@ -211,7 +226,13 @@ export function RelationshipGraph({
             </span>
           </div>
         ))}
+        <div className="flex items-center gap-2 border-l pl-4 dark:border-gray-600">
+          <div className="w-6 h-0 border-t-2 border-dashed" style={{ borderColor: "#6366F1" }} />
+          <span className="text-sm text-gray-600 dark:text-gray-300">
+            進化チェーン
+          </span>
+        </div>
       </div>
     </div>
   );
-}
+});

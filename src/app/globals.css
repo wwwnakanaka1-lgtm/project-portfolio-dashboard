@@ -1311,3 +1311,72 @@ body {
 .tab-indicator {
   transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ===== Showcase Page ===== */
+
+/* Hero animated gradient background */
+.showcase-hero-bg {
+  background: linear-gradient(135deg, #f5f9ff 0%, #e8ecff 50%, #f0f5ff 100%);
+  background-size: 200% 200%;
+  animation: showcase-gradient 8s ease infinite;
+}
+
+.dark .showcase-hero-bg {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%);
+  background-size: 200% 200%;
+}
+
+@keyframes showcase-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Scroll indicator bounce */
+.showcase-scroll-indicator {
+  animation: showcase-bounce 2s ease-in-out infinite;
+}
+
+@keyframes showcase-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(10px); }
+}
+
+/* Showcase card accent border */
+.showcase-card {
+  border-left: 4px solid var(--accent);
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+@media (hover: hover) {
+  .showcase-card:hover {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  }
+}
+
+.dark .showcase-card:hover {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* Screenshot container */
+.showcase-screenshot {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 16px;
+  position: relative;
+  background: var(--card-bg);
+}
+
+/* Hero gradient overlay animation */
+@keyframes heroGradientShift {
+  0% { opacity: 0.2; transform: scale(1); }
+  100% { opacity: 0.4; transform: scale(1.1); }
+}
+
+/* CTA gradient text */
+.showcase-gradient-text {
+  background: linear-gradient(135deg, var(--accent), var(--accent-light));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

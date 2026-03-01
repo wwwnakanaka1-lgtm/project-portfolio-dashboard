@@ -1,0 +1,99 @@
+{
+  "profile": {
+    "name": "Your Name",
+    "title": "Full-Stack Developer & AI Engineer",
+    "tagline": "AIとデータで、ビジネスの未来を創る",
+    "bio": "Python / TypeScript / Next.js を中心に、金融・製造・AI分野のプロダクトを開発。高速にプロトタイプから本番品質まで仕上げます。",
+    "links": {
+      "github": "https://github.com/username",
+      "email": "your@email.com"
+    }
+  },
+  "projects": [
+    {
+      "id": "nexus",
+      "title": "Nexus",
+      "catchphrase": "3500+カラムの大規模データをリアルタイム分析するプラットフォーム",
+      "description": "Next.js + FastAPI + DuckDB/PyArrow の高性能データ分析基盤。Celery + Redis による非同期処理でバックグラウンド分析を実現。製造業の品質管理データを瞬時に可視化。",
+      "category": "data-analysis",
+      "technologies": ["Next.js", "TypeScript", "FastAPI", "DuckDB", "Redis"],
+      "screenshot": "/screenshots/nexus.png",
+      "githubUrl": "https://github.com/username/nexus",
+      "learnings": [
+        "DuckDB のカラムナストレージで pandas の 10 倍の分析速度を達成",
+        "Celery + Redis で非同期パイプラインを設計・構築",
+        "3500+ カラム対応の動的 UI レンダリングを実装"
+      ],
+      "order": 1,
+      "accentColor": "#3B82F6"
+    },
+    {
+      "id": "stock-trading-system",
+      "title": "Stock Trading System",
+      "catchphrase": "ML統合のトレーディングプラットフォームで投資判断を加速",
+      "description": "機械学習によるパターン認識、ポートフォリオ分析、銘柄スクリーナーを統合したトレーディングシステム。リアルタイムデータ取得と自動分析を実現。",
+      "category": "finance",
+      "technologies": ["Python", "FastAPI", "scikit-learn", "PyTorch", "Plotly"],
+      "screenshot": "/screenshots/stock-trading-system.png",
+      "githubUrl": "https://github.com/username/stock-trading-system",
+      "learnings": [
+        "scikit-learn + PyTorch でチャートパターン認識モデルを構築",
+        "FastAPI でリアルタイムデータパイプラインを設計",
+        "Plotly によるインタラクティブな金融チャート UI を実装"
+      ],
+      "order": 2,
+      "accentColor": "#10B981"
+    },
+    {
+      "id": "production-data-analyzer-nextjs",
+      "title": "Production Data Analyzer",
+      "catchphrase": "製造ラインの品質データを即座に可視化・分析",
+      "description": "製造業向けの高速データ分析 Web アプリ。DuckDB によるインメモリ分析と ECharts による豊富な可視化で、品質管理を効率化。",
+      "category": "data-analysis",
+      "technologies": ["Next.js", "TypeScript", "DuckDB", "ECharts", "Python"],
+      "screenshot": "/screenshots/production-data-analyzer.png",
+      "githubUrl": "https://github.com/username/production-data-analyzer-nextjs",
+      "learnings": [
+        "DuckDB の WASM 版でブラウザ内高速分析を実現",
+        "ECharts で製造業特化の統計チャートを構築",
+        "大量 CSV データの段階的ロードとストリーミング処理を設計"
+      ],
+      "order": 3,
+      "accentColor": "#8B5CF6"
+    },
+    {
+      "id": "project-portfolio-dashboard",
+      "title": "Project Portfolio Dashboard",
+      "catchphrase": "AI開発セッションのコスト・進捗を一元管理するダッシュボード",
+      "description": "Claude Code / Codex のセッション監視、トークン使用量追跡、コスト分析を統合したダッシュボード。異常検知・予測機能付き。本ポートフォリオサイト自体もこのプロジェクト。",
+      "category": "ai-llm",
+      "technologies": ["Next.js", "TypeScript", "Recharts", "D3.js", "Tailwind CSS"],
+      "screenshot": "/screenshots/project-portfolio-dashboard.png",
+      "githubUrl": "https://github.com/username/project-portfolio-dashboard",
+      "learnings": [
+        "D3.js + Recharts でリアルタイム可視化ダッシュボードを構築",
+        "コスト異常検知（Z-score）と線形回帰予測を実装",
+        "PWA 対応と glassmorphism デザインシステムを設計"
+      ],
+      "order": 4,
+      "accentColor": "#F59E0B"
+    },
+    {
+      "id": "mind-map-tool",
+      "title": "Mind Map Tool",
+      "catchphrase": "直感的な操作でアイデアを構造化するマインドマップ",
+      "description": "React + xyflow ベースのインタラクティブなマインドマップ作成ツール。ドラッグ&ドロップ、ズーム、自動レイアウトに対応。",
+      "category": "utility",
+      "technologies": ["React", "TypeScript", "xyflow", "Zustand", "Tailwind CSS"],
+      "screenshot": "/screenshots/mind-map-tool.png",
+      "githubUrl": "https://github.com/username/mind-map-tool",
+      "learnings": [
+        "xyflow でノードベースの UI とカスタムエッジを実装",
+        "Zustand による軽量かつ予測可能な状態管理を設計",
+        "Canvas ベースのレンダリングでスムーズなインタラクションを実現"
+      ],
+      "order": 5,
+      "accentColor": "#EC4899"
+    }
+  ]
+}

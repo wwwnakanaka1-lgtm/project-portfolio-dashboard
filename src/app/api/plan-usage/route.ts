@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import os from "os";
 import { getCachedSync } from "@/lib/api-cache";
 import {
   buildRollingWindowTimeline,
   calculateRollingWindowFromMessageTimestamps,
   type RollingWindowUsage,
 } from "@/lib/rolling-window";
+import { getClaudeFileData, getCodexFileLines, getFileMtimeMs } from "@/lib/file-cache";
+import { getClaudeJsonlFiles, getCodexJsonlFiles } from "@/lib/file-discovery";
 
-const PLAN_USAGE_CACHE_TTL = 10000;
+const PLAN_USAGE_CACHE_TTL = 20000; // 20s (SWR handles interim)
 const WINDOW_HOURS = 5;
 const WINDOW_MS = WINDOW_HOURS * 60 * 60 * 1000;
 const CODEX_RATE_LIMIT_SCAN_FILES = Number(process.env.CODEX_RATE_LIMIT_SCAN_FILES ?? 30);
@@ -86,91 +85,6 @@ function parseTimestamp(value: unknown): number | null {
   return timestamp;
 }
 
-function normalizePath(rawPath: string): string | null {
-  if (fs.existsSync(rawPath)) {
-    return rawPath;
-  }
-
-  const candidates = [
-    rawPath.replace(/c--Users-wwwhi/i, "C--Users-wwwhi"),
-    rawPath.replace(/C--Users-wwwhi/i, "c--Users-wwwhi"),
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-function addUniquePath(paths: Map<string, string>, rawPath: string): void {
-  const normalized = normalizePath(rawPath);
-  if (!normalized) {
-    return;
-  }
-  paths.set(normalized.toLowerCase(), normalized);
-}
-
-function getClaudeProjectDir(): string | null {
-  const projectsDir = path.join(os.homedir(), ".claude", "projects");
-  const candidates = ["C--Users-wwwhi", "c--Users-wwwhi"];
-  for (const candidate of candidates) {
-    const projectDir = path.join(projectsDir, candidate);
-    if (fs.existsSync(projectDir)) {
-      return projectDir;
-    }
-  }
-  return null;
-}
-
-function getClaudeSessionFiles(projectDir: string): string[] {
-  const files = new Map<string, string>();
-  const sessionsIndexPath = path.join(projectDir, "sessions-index.json");
-
-  if (fs.existsSync(sessionsIndexPath)) {
-    try {
-      const raw = fs.readFileSync(sessionsIndexPath, "utf8");
-      const parsed = JSON.parse(raw) as { entries?: Array<{ fullPath?: string }> };
-      for (const entry of parsed.entries ?? []) {
-        if (typeof entry.fullPath === "string") {
-          addUniquePath(files, entry.fullPath);
-        }
-      }
-    } catch {
-      // Ignore malformed sessions-index.json and continue with fallback files.
-    }
-  }
-
-  for (const fileName of fs.readdirSync(projectDir)) {
-    if (fileName.endsWith(".jsonl")) {
-      addUniquePath(files, path.join(projectDir, fileName));
-    }
-  }
-
-  return Array.from(files.values());
-}
-
-function walkJsonlFiles(dir: string): string[] {
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-
-  const files: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...walkJsonlFiles(fullPath));
-      continue;
-    }
-    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-      files.push(fullPath);
-    }
-  }
-  return files;
-}
-
 function parseCodexRateLimitEntry(entry: Record<string, unknown>): CodexRateLimitSnapshot | null {
   if (entry.type !== "event_msg") {
     return null;
@@ -222,19 +136,15 @@ function parseCodexRateLimitEntry(entry: Record<string, unknown>): CodexRateLimi
 }
 
 function findLatestCodexRateLimit(): CodexRateLimitSnapshot | null {
-  const codexRoot = path.join(os.homedir(), ".codex", "sessions");
-  const allFiles = walkJsonlFiles(codexRoot);
+  const allFiles = getCodexJsonlFiles();
+  if (allFiles.length === 0) return null;
 
-  if (allFiles.length === 0) {
-    return null;
-  }
-
+  // Sort by mtime (newest first) and take top N
   const filesWithMtime: Array<{ filePath: string; mtimeMs: number }> = [];
   for (const filePath of allFiles) {
-    try {
-      filesWithMtime.push({ filePath, mtimeMs: fs.statSync(filePath).mtimeMs });
-    } catch {
-      // Ignore transient file errors and continue.
+    const mtimeMs = getFileMtimeMs(filePath);
+    if (mtimeMs !== null) {
+      filesWithMtime.push({ filePath, mtimeMs });
     }
   }
 
@@ -246,26 +156,13 @@ function findLatestCodexRateLimit(): CodexRateLimitSnapshot | null {
   let latest: CodexRateLimitSnapshot | null = null;
 
   for (const filePath of recentFiles) {
-    let content: string;
-    try {
-      content = fs.readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-
-    const lines = content.split(/\r?\n/).filter(Boolean);
+    const lines = getCodexFileLines(filePath);
     for (let i = lines.length - 1; i >= 0; i -= 1) {
-      let entry: Record<string, unknown>;
-      try {
-        entry = JSON.parse(lines[i]) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
+      const entry = lines[i] as Record<string, unknown>;
+      if (!entry) continue;
 
       const parsed = parseCodexRateLimitEntry(entry);
-      if (!parsed) {
-        continue;
-      }
+      if (!parsed) continue;
 
       if (!latest || parsed.observedAtMs > latest.observedAtMs) {
         latest = parsed;
@@ -284,25 +181,12 @@ function collectMessageTimestampsFromJsonl(
   const timestamps: number[] = [];
 
   for (const filePath of files) {
-    let content: string;
-    try {
-      content = fs.readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
+    const lines = getCodexFileLines(filePath);
+    for (const rawLine of lines) {
+      const entry = rawLine as Record<string, unknown>;
+      if (!entry) continue;
 
-    const lines = content.split(/\r?\n/).filter(Boolean);
-    for (const line of lines) {
-      let entry: Record<string, unknown>;
-      try {
-        entry = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-
-      if (!predicate(entry)) {
-        continue;
-      }
+      if (!predicate(entry)) continue;
 
       const timestamp = parseTimestamp(entry.timestamp);
       if (timestamp !== null) {
@@ -315,23 +199,21 @@ function collectMessageTimestampsFromJsonl(
 }
 
 function getClaudeMessageTimestamps(): number[] {
-  const projectDir = getClaudeProjectDir();
-  if (!projectDir) {
-    return [];
+  const files = getClaudeJsonlFiles();
+  const timestamps: number[] = [];
+  for (const filePath of files) {
+    const data = getClaudeFileData(filePath);
+    if (data) {
+      timestamps.push(...data.userTimestamps);
+    }
   }
-
-  const files = getClaudeSessionFiles(projectDir);
-  return collectMessageTimestampsFromJsonl(files, (entry) => entry.type === "user");
+  return timestamps;
 }
 
 function getCodexMessageTimestamps(): number[] {
-  const codexRoot = path.join(os.homedir(), ".codex", "sessions");
-  const files = walkJsonlFiles(codexRoot);
-
+  const files = getCodexJsonlFiles();
   return collectMessageTimestampsFromJsonl(files, (entry) => {
-    if (entry.type !== "event_msg") {
-      return false;
-    }
+    if (entry.type !== "event_msg") return false;
     const payload = entry.payload as Record<string, unknown> | undefined;
     return payload?.type === "user_message";
   });

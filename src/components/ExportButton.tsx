@@ -49,16 +49,16 @@ export default function ExportButton({
       }
     } catch (error) {
       console.error(`Export failed:`, error);
-      alert(`エクスポート失敗: ${error instanceof Error ? error.message : "不明なエラー"}`);
+      alert(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsExporting(false);
     }
   };
 
   const exportOptions: { format: ExportFormat; label: string; description: string; icon: string }[] = [
-    { format: "html", label: "HTML レポート", description: "プレゼン形式", icon: "html" },
-    { format: "csv", label: "CSV", description: "Excel用", icon: "csv" },
-    { format: "json", label: "JSON", description: "データ形式", icon: "json" },
+    { format: "html", label: "HTML Report", description: "Presentation", icon: "html" },
+    { format: "csv", label: "CSV", description: "For Excel", icon: "csv" },
+    { format: "json", label: "JSON", description: "Data format", icon: "json" },
   ];
 
   return (
@@ -90,7 +90,7 @@ export default function ExportButton({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            <span>エクスポート中...</span>
+            <span>Exporting...</span>
           </>
         ) : (
           <>
@@ -108,7 +108,7 @@ export default function ExportButton({
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
               />
             </svg>
-            <span>エクスポート</span>
+            <span>Export</span>
             <svg
               className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
               fill="none"
@@ -144,7 +144,7 @@ export default function ExportButton({
                   {option.label}
                   {index === 0 && (
                     <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-2 py-0.5 rounded">
-                      推奨
+                      Recommended
                     </span>
                   )}
                 </div>

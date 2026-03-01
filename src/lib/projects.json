@@ -8,7 +8,8 @@
       "path": "C:/Users/wwwhi/Create/stock-trading-system",
       "technologies": ["Python", "Streamlit", "FastAPI", "scikit-learn", "PyTorch", "Plotly", "yfinance"],
       "status": "active",
-      "launchCommand": "streamlit run ui/app.py"
+      "launchCommand": "streamlit run ui/app.py",
+      "growthLevel": "stable"
     },
     {
       "id": "auto-trading-system",
@@ -17,7 +18,8 @@
       "description": "Wyckoffパターン検出による自動トレードシステム",
       "path": "C:/Users/wwwhi/Create/auto-trading-system",
       "technologies": ["Python", "pandas", "yfinance", "scipy"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "growing"
     },
     {
       "id": "jp-stock-theme-tracker",
@@ -27,7 +29,12 @@
       "path": "C:/Users/wwwhi/Create/jp-stock-theme-tracker",
       "technologies": ["Python", "Streamlit", "pandas", "yfinance"],
       "status": "active",
-      "launchCommand": "streamlit run main.py"
+      "launchCommand": "streamlit run main.py",
+      "growthLevel": "evolved",
+      "evolution": {
+        "supersededBy": "jp-theme-tracker-next",
+        "evolutionNote": "Streamlit版からNext.js版へ移行"
+      }
     },
     {
       "id": "jp-theme-tracker-next",
@@ -37,7 +44,12 @@
       "path": "C:/Users/wwwhi/Create/jp-theme-tracker-next",
       "technologies": ["Next.js", "TypeScript", "FastAPI", "Recharts"],
       "status": "active",
-      "launchCommand": "cd frontend && npm run dev"
+      "launchCommand": "cd frontend && npm run dev",
+      "growthLevel": "stable",
+      "evolution": {
+        "supersedes": "jp-stock-theme-tracker",
+        "evolutionNote": "Next.js + FastAPI構成へ進化"
+      }
     },
     {
       "id": "investment-dashboard",
@@ -46,7 +58,8 @@
       "description": "投資ポートフォリオ分析ダッシュボード",
       "path": "C:/Users/wwwhi/Create/investment-dashboard",
       "technologies": ["Python", "pandas", "matplotlib", "yfinance"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "seed"
     },
     {
       "id": "investment-strategy-pptx",
@@ -55,7 +68,8 @@
       "description": "投資戦略PowerPointレポート生成ツール",
       "path": "C:/Users/wwwhi/Create/investment-strategy-pptx",
       "technologies": ["Python", "python-pptx"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "stable"
     },
     {
       "id": "expectation-nikkei",
@@ -64,7 +78,8 @@
       "description": "日経225予測デスクトップアプリケーション",
       "path": "C:/Users/wwwhi/Create/expectation-nikkei",
       "technologies": ["Python", "PySide6", "scikit-learn"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "stable"
     },
     {
       "id": "salary-dashboard",
@@ -73,7 +88,12 @@
       "description": "給与分析Webダッシュボード",
       "path": "C:/Users/wwwhi/Create/salary-dashboard",
       "technologies": ["Python", "Flask", "pandas", "scikit-learn"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "stable",
+      "evolution": {
+        "supersedes": "salary_dashboard",
+        "evolutionNote": "ExcelからFlask Webアプリへ進化"
+      }
     },
     {
       "id": "salary_dashboard",
@@ -82,7 +102,12 @@
       "description": "給与データExcelファイル",
       "path": "C:/Users/wwwhi/Create/salary_dashboard",
       "technologies": ["Excel"],
-      "status": "archive"
+      "status": "archive",
+      "growthLevel": "dormant",
+      "evolution": {
+        "supersededBy": "salary-dashboard",
+        "evolutionNote": "Flask版に置き換え済み"
+      }
     },
     {
       "id": "nexus",
@@ -92,7 +117,8 @@
       "path": "C:/Users/wwwhi/Create/nexus",
       "technologies": ["Next.js", "TypeScript", "FastAPI", "Celery", "Redis", "PyArrow"],
       "status": "active",
-      "launchCommand": "docker-compose up"
+      "launchCommand": "docker-compose up",
+      "growthLevel": "flagship"
     },
     {
       "id": "production_data_analyzer",
@@ -101,7 +127,12 @@
       "description": "RF部品製造データ分析デスクトップアプリ",
       "path": "C:/Users/wwwhi/Create/production_data_analyzer",
       "technologies": ["Python", "tkinter", "pandas", "scipy"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "evolved",
+      "evolution": {
+        "supersededBy": "production_data_analyzer_dash",
+        "evolutionNote": "デスクトップからWeb版（Dash）へ移行"
+      }
     },
     {
       "id": "production_data_analyzer_dash",
@@ -110,7 +141,13 @@
       "description": "製造データ分析Web版（Dash）",
       "path": "C:/Users/wwwhi/Create/production_data_analyzer_dash",
       "technologies": ["Python", "Dash", "pandas", "Plotly"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "evolved",
+      "evolution": {
+        "supersedes": "production_data_analyzer",
+        "supersededBy": "production-data-analyzer",
+        "evolutionNote": "Dash版からGradio版へ移行"
+      }
     },
     {
       "id": "production-data-analyzer",
@@ -120,7 +157,13 @@
       "path": "C:/Users/wwwhi/Create/production-data-analyzer",
       "technologies": ["Python", "Gradio", "pandas", "Plotly"],
       "status": "active",
-      "launchCommand": "python app_web.py"
+      "launchCommand": "python app_web.py",
+      "growthLevel": "evolved",
+      "evolution": {
+        "supersedes": "production_data_analyzer_dash",
+        "supersededBy": "production-data-analyzer-nextjs",
+        "evolutionNote": "Gradio版からNext.js版へ移行"
+      }
     },
     {
       "id": "production-data-analyzer-nextjs",
@@ -129,7 +172,12 @@
       "description": "製造データ分析最新版（Next.js + DuckDB）",
       "path": "C:/Users/wwwhi/Create/production-data-analyzer-nextjs",
       "technologies": ["Next.js", "TypeScript", "DuckDB", "ECharts"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "flagship",
+      "evolution": {
+        "supersedes": "production-data-analyzer",
+        "evolutionNote": "Next.js + DuckDBによる最新版"
+      }
     },
     {
       "id": "auto-code-reviewer",
@@ -139,7 +187,8 @@
       "path": "C:/Users/wwwhi/Create/auto-code-reviewer",
       "technologies": ["Python", "Groq"],
       "status": "active",
-      "githubRepo": "wwwnakanaka1-lgtm/ai-code-reviewer"
+      "githubRepo": "wwwnakanaka1-lgtm/ai-code-reviewer",
+      "growthLevel": "stable"
     },
     {
       "id": "claude-task-dashboard",
@@ -148,7 +197,12 @@
       "description": "Claude AIタスク管理ダッシュボード（旧版、project-portfolio-dashboardに統合）",
       "path": "C:/Users/wwwhi/Create/claude-task-dashboard",
       "technologies": ["Node.js", "JavaScript"],
-      "status": "archive"
+      "status": "archive",
+      "growthLevel": "evolved",
+      "evolution": {
+        "supersededBy": "project-portfolio-dashboard",
+        "evolutionNote": "Portfolio Dashboardに機能統合"
+      }
     },
     {
       "id": "project-portfolio-dashboard",
@@ -158,7 +212,12 @@
       "path": "C:/Users/wwwhi/Create/project-portfolio-dashboard",
       "technologies": ["Next.js", "TypeScript", "Tailwind CSS", "Recharts"],
       "status": "active",
-      "launchCommand": "npm run dev"
+      "launchCommand": "npm run dev",
+      "growthLevel": "flagship",
+      "evolution": {
+        "supersedes": "claude-task-dashboard",
+        "evolutionNote": "Claude Task Dashboardの機能を統合・拡張"
+      }
     },
     {
       "id": "clawdbot-usage-logger",
@@ -167,7 +226,8 @@
       "description": "Clawdbot API使用量ログツール（OTLP）",
       "path": "C:/Users/wwwhi/Create/clawdbot-usage-logger",
       "technologies": ["Python", "OpenTelemetry"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "stable"
     },
     {
       "id": "local-llm-chat",
@@ -177,7 +237,8 @@
       "path": "C:/Users/wwwhi/Create/local-llm-chat",
       "technologies": ["Python", "Gradio", "Ollama"],
       "status": "active",
-      "launchCommand": "python app.py"
+      "launchCommand": "python app.py",
+      "growthLevel": "stable"
     },
     {
       "id": "md-to-pdf",
@@ -186,7 +247,8 @@
       "description": "Markdown→PDF変換ツール",
       "path": "C:/Users/wwwhi/Create/md-to-pdf",
       "technologies": ["Python", "fpdf2", "customtkinter"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "stable"
     },
     {
       "id": "pptx-template-generator",
@@ -195,7 +257,8 @@
       "description": "PowerPointテンプレート生成ツール",
       "path": "C:/Users/wwwhi/Create/pptx-template-generator",
       "technologies": ["Python", "python-pptx"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "stable"
     },
     {
       "id": "quick-launcher",
@@ -204,7 +267,8 @@
       "description": "Windowsアプリケーションランチャー",
       "path": "C:/Users/wwwhi/Create/quick-launcher",
       "technologies": ["Python", "tkinter", "pywinauto"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "stable"
     },
     {
       "id": "mind-map-tool",
@@ -214,7 +278,8 @@
       "path": "C:/Users/wwwhi/Create/mind-map-tool",
       "technologies": ["React", "TypeScript", "xyflow", "Zustand", "TailwindCSS"],
       "status": "active",
-      "launchCommand": "npm run dev"
+      "launchCommand": "npm run dev",
+      "growthLevel": "growing"
     },
     {
       "id": "fukunage-line-bot",
@@ -223,7 +288,8 @@
       "description": "LINEキャラクターボット",
       "path": "C:/Users/wwwhi/Create/fukunage-line-bot",
       "technologies": ["Python", "Flask"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "stable"
     },
     {
       "id": "parallel-test",
@@ -232,7 +298,8 @@
       "description": "TODOアプリ（バックエンド）",
       "path": "C:/Users/wwwhi/Create/parallel-test",
       "technologies": ["Python", "FastAPI", "SQLite", "SQLAlchemy"],
-      "status": "active"
+      "status": "active",
+      "growthLevel": "seed"
     },
     {
       "id": "parallel-test-frontend",
@@ -241,7 +308,8 @@
       "description": "TODOアプリ（フロントエンド予定）",
       "path": "C:/Users/wwwhi/Create/parallel-test-frontend",
       "technologies": [],
-      "status": "empty"
+      "status": "empty",
+      "growthLevel": "dormant"
     },
     {
       "id": "job_history",
@@ -250,7 +318,8 @@
       "description": "履歴書保管フォルダ",
       "path": "C:/Users/wwwhi/Create/job_history",
       "technologies": [],
-      "status": "archive"
+      "status": "archive",
+      "growthLevel": "dormant"
     }
   ],
   "categories": {

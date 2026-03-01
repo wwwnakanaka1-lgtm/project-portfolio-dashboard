@@ -1,3 +1,28 @@
+/** Growth level representing a project's lifecycle stage. */
+export type GrowthLevel = "seed" | "growing" | "stable" | "flagship" | "evolved" | "dormant";
+
+/** Metadata for each growth level including display icon and label. */
+export interface GrowthLevelInfo {
+  level: GrowthLevel;
+  icon: string;
+  label: string;
+  labelJa: string;
+  description: string;
+  color: string;
+  /** Numeric sort order (lower = earlier in lifecycle). */
+  order: number;
+}
+
+/** Evolution chain entry linking a project to its successor/predecessor. */
+export interface EvolutionLink {
+  /** ID of the project that superseded this one. */
+  supersededBy?: string;
+  /** ID of the project that this one superseded. */
+  supersedes?: string;
+  /** Human-readable note about the evolution. */
+  evolutionNote?: string;
+}
+
 /** Code statistics for a project (lines, files, languages, dependencies). */
 export interface ProjectStats {
   lines: number;
@@ -41,6 +66,10 @@ export interface Project {
   launchCommand?: string;
   /** GitHub repository identifier, e.g. "owner/repo-name". */
   githubRepo?: string;
+  /** Growth lifecycle level. Defaults to "seed" for auto-discovered projects. */
+  growthLevel?: GrowthLevel;
+  /** Evolution chain linkage to predecessor/successor projects. */
+  evolution?: EvolutionLink;
 }
 
 /** Display metadata for a project category. */

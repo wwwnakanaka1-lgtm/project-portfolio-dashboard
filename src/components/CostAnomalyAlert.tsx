@@ -42,7 +42,7 @@ export function CostAnomalyAlert({ dailyActivity, exchangeRate }: CostAnomalyAle
               ${anomaly.cost.toFixed(2)} (¥{Math.round(anomaly.cost * exchangeRate).toLocaleString()})
             </span>
             <span className="text-gray-400 dark:text-gray-500 ml-1">
-              — 平均 ${anomaly.expected.toFixed(2)} の {anomaly.zscore.toFixed(1)}σ
+              — avg ${anomaly.expected.toFixed(2)}, {anomaly.zscore.toFixed(1)}σ
             </span>
           </div>
           <span
